@@ -51,10 +51,48 @@ The parallel rating flow: `POST /songs/<song_id>/rate` → `routes/songs.py::rat
 
 | # | Title | Service | Plan |
 |---|-------|---------|------|
-| 1 | Listening streak keeps resetting | `streak_service.py` | Likely fix |
-| 2 | Friends Listening Now shows people from yesterday | `feed_service.py` | Candidate |
-| 3 | Same song shows twice in search | `search_service.py` | Likely fix |
-| 4 | Notified on playlist-add but not on rating | `notification_service.py` | Likely fix |
-| 5 | Last song in a playlist never shows up | `playlist_service.py` | Candidate |
+| 1 | Listening streak keeps resetting | `streak_service.py` | **Chosen** |
+| 2 | Friends Listening Now shows people from yesterday | `feed_service.py` | Candidate (stretch) |
+| 3 | Same song shows twice in search | `search_service.py` | Attempted — did not reproduce (see below) |
+| 4 | Notified on playlist-add but not on rating | `notification_service.py` | **Chosen** |
+| 5 | Last song in a playlist never shows up | `playlist_service.py` | **Chosen** |
 
-I'll confirm which 3+ to fix in the next milestone by reproducing each first.
+**Chosen three: #1, #4, #5.**
+
+---
+
+## Milestone 2 — Reproduction (before any fix)
+
+> All reproductions run service functions directly against the seeded DB; no code was changed. Streak repro uses uncommitted in-memory users (rolled back); the rating repro deletes the row it creates to restore DB state.
+
+### Bug #1 — Listening streak keeps resetting
+
+**How I reproduced it:** Created an in-memory user with `listening_streak=5` who "listened yesterday," then called `update_listening_streak(user, now)` three times with `now` set to a Saturday, a Sunday, and a Monday.
+
+| `now` day | weekday() | streak 5 → |
+|-----------|-----------|------------|
+| Saturday | 5 | **6** (increments, correct) |
+| Sunday | 6 | **1** (resets — BUG) |
+| Monday | 0 | **6** (increments, correct) |
+
+A consecutive-day listen that lands on a **Sunday** resets the streak instead of incrementing it. Any user listening every day loses their streak every Sunday.
+
+### Bug #4 — Notified on playlist-add but not on rating
+
+**How I reproduced it:** Had `nova` rate `simone`'s song "Crown Heights Anthem" 5 stars via `rate_song()`, then checked `get_notifications(simone.id)`. Simone's notification count stayed `0 → 0`, and there were zero `song_rated` notifications. By contrast, `add_to_playlist()` does generate a `song_added_to_playlist` notification for the sharer. So rating produces no notification at all.
+
+### Bug #5 — Last song in a playlist never shows up
+
+**How I reproduced it:** For each seeded playlist, compared the true entry count in `playlist_entries` against what `get_playlist_songs()` returns.
+
+| Playlist | Entries in DB | Returned by service | Missing |
+|----------|---------------|---------------------|---------|
+| Late Night Vibes | 7 | 6 | 1 |
+| Friday Energy | 7 | 6 | 1 |
+| Study Mode | 7 | 6 | 1 |
+
+Every playlist returns exactly one fewer song than it contains — the highest-`position` (last) song is always dropped.
+
+### Bug #3 — Attempted, did not reproduce (why)
+
+Searching for the 3-tag song "Crown Heights Anthem" returned `count=1`, not a duplicate. `search_songs()` uses `db.session.query(Song)` (the legacy Query API), which automatically de-duplicates ORM entities by primary key, so the `outerjoin` on `song_tags` does not actually surface duplicate `Song` rows. The real trigger appears to be a separate, conditional code path; I set this aside in favor of three bugs I could reproduce deterministically. May revisit as a stretch goal.
