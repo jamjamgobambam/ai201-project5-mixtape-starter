@@ -124,3 +124,15 @@ Searching for the 3-tag song "Crown Heights Anthem" returned `count=1`, not a du
 **My fix and side-effect check:** Changed `songs[:-1]` to `songs` so all rows are returned. Verified both boundaries: a populated playlist now returns all songs in correct position order, and an empty playlist still returns `[]` without error (`[][:-1]` and `[]` are both empty, so the edge case never regressed). All 3 playlist tests pass.
 
 *AI use:* Minimal — the assistant confirmed Python slice semantics (`[:-1]` excludes the last element).
+
+### Bug #4 — I got notified when a friend added my song to a playlist but not when they rated it
+
+**How I reproduced it:** Had `nova` rate `simone`'s song via `rate_song()`, then read `get_notifications(simone.id)`. The count stayed `0 → 0` and there were zero `song_rated` notifications, while `add_to_playlist()` does create a `song_added_to_playlist` notification. So the rating path produced no notification at all.
+
+**How I found the root cause:** This was an architectural comparison, not a typo hunt. Both flows live in `notification_service.py`. I read the working `add_to_playlist` (line ~64): after writing its data it checks `if song.shared_by != added_by_user_id:` and calls `create_notification(...)`. Then I read `rate_song` line-by-line: it validates the score, fetches the song and rater, upserts the `Rating`, commits, and returns — with **no** `create_notification` call anywhere. Comparing the two side by side made it clear the notification step was simply never written into `rate_song`, even though `create_notification` and the recipient (`song.shared_by`) were readily available.
+
+**The root cause:** `rate_song` persists the rating but never notifies the song's original sharer. The notification behavior that exists in `add_to_playlist` (notify `song.shared_by`, guarded by a self-action check) was never implemented in the rating path. The bug is a missing step, not a broken one.
+
+**My fix and side-effect check:** After the `db.session.commit()` in `rate_song`, I added the same notification pattern used by `add_to_playlist`: `if song.shared_by != user_id:` create a `song_rated` notification for `song.shared_by` with body `"{rater.username} rated your song '{song.title}' N star(s)."`. The `!= user_id` guard prevents self-rating notifications, matching the playlist path's `!= added_by_user_id` guard. I verified three cases by running the service directly: (1) a friend rating the sharer's song now creates exactly one `song_rated` notification, (2) a user rating their own song creates none, (3) score `1` renders as "1 star" (singular). I also confirmed the existing `song_added_to_playlist` path is untouched and the full test suite (13 tests) still passes. Test rows were deleted afterward to keep the seeded DB clean.
+
+*AI use:* Used the assistant to diff the two functions and confirm `add_to_playlist`'s notification pattern was the intended template to mirror.
