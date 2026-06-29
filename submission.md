@@ -96,3 +96,19 @@ Every playlist returns exactly one fewer song than it contains — the highest-`
 ### Bug #3 — Attempted, did not reproduce (why)
 
 Searching for the 3-tag song "Crown Heights Anthem" returned `count=1`, not a duplicate. `search_songs()` uses `db.session.query(Song)` (the legacy Query API), which automatically de-duplicates ORM entities by primary key, so the `outerjoin` on `song_tags` does not actually surface duplicate `Song` rows. The real trigger appears to be a separate, conditional code path; I set this aside in favor of three bugs I could reproduce deterministically. May revisit as a stretch goal.
+
+---
+
+## Milestone 3 — Root Cause Analysis
+
+### Bug #1 — My listening streak keeps resetting
+
+**How I reproduced it:** Created an in-memory user with `listening_streak=5` who listened "yesterday," then called `update_listening_streak(user, now)` with `now` on a Saturday, Sunday, and Monday. Saturday and Monday incremented the streak to 6; Sunday reset it to 1. The existing test `test_streak_increments_on_sunday` also failed (`assert 1 == 2`), confirming it independently.
+
+**How I found the root cause:** Started at the route `GET /users/<id>/streak` (`routes/users.py`) → `streak_service.get_streak`, but the streak is *written* by `record_listening_event` → `update_listening_streak`. Reading that function, line 73 stood out: `elif days_since_last == 1 and today.weekday() != 6:`. The extra `today.weekday() != 6` clause has nothing to do with the documented streak rules in the function's own docstring, which made me confident this was the cause rather than just a suspicious area.
+
+**The root cause:** Python's `datetime.weekday()` returns `6` for Sunday. The consecutive-day branch was guarded by `days_since_last == 1 and today.weekday() != 6`. On any Sunday, `today.weekday() != 6` is `False`, so the `elif` failed and execution fell through to the `else` branch, which resets the streak to 1 — even though the user listened on a perfectly consecutive day. So every Sunday silently broke an ongoing streak.
+
+**My fix and side-effect check:** Removed the `and today.weekday() != 6` clause (line 73), leaving `elif days_since_last == 1:`. The weekday has no bearing on whether two dates are consecutive, so this restores the documented rule. I re-ran all 5 streak tests (new-user start, consecutive increment, same-day no-double-count, skipped-day reset, and the Sunday case) — all pass. The same-day (`days_since_last == 0`) and skipped-day (`> 1`) branches are untouched, so both sides of the boundary still behave correctly.
+
+*AI use:* Used the assistant to scan `weekday()` semantics and confirm `6 == Sunday`, and to trace the route→service write path.
