@@ -112,3 +112,15 @@ Searching for the 3-tag song "Crown Heights Anthem" returned `count=1`, not a du
 **My fix and side-effect check:** Removed the `and today.weekday() != 6` clause (line 73), leaving `elif days_since_last == 1:`. The weekday has no bearing on whether two dates are consecutive, so this restores the documented rule. I re-ran all 5 streak tests (new-user start, consecutive increment, same-day no-double-count, skipped-day reset, and the Sunday case) — all pass. The same-day (`days_since_last == 0`) and skipped-day (`> 1`) branches are untouched, so both sides of the boundary still behave correctly.
 
 *AI use:* Used the assistant to scan `weekday()` semantics and confirm `6 == Sunday`, and to trace the route→service write path.
+
+### Bug #5 — The last song in a playlist never shows up
+
+**How I reproduced it:** For each seeded playlist, compared the true row count in the `playlist_entries` table against the length returned by `get_playlist_songs()`. Every 7-entry playlist returned exactly 6 songs, always missing the highest-`position` (last) one. The existing tests `test_playlist_returns_all_songs` (`assert len == 5`) and `test_playlist_returns_songs_in_order` also failed.
+
+**How I found the root cause:** Traced `GET /playlists/<id>/songs` (`routes/playlists.py::get_songs`) → `playlist_service.get_playlist_songs`. The query itself was correct — it joins `playlist_entries`, filters by playlist, and orders ascending by `position`. The bug was on the very last line, in the return expression rather than the query: `return [song.to_dict() for song in songs[:-1]]`. The `[:-1]` slice is what made it conclusive — the docstring explicitly says "returns all songs," yet the slice silently drops one.
+
+**The root cause:** The list comprehension iterated over `songs[:-1]` instead of `songs`. Python's `[:-1]` slice returns every element *except the last*, so the song with the highest position was always discarded after a correctly-ordered query. Because results are ordered ascending by `position`, the dropped element was always the last song in the playlist.
+
+**My fix and side-effect check:** Changed `songs[:-1]` to `songs` so all rows are returned. Verified both boundaries: a populated playlist now returns all songs in correct position order, and an empty playlist still returns `[]` without error (`[][:-1]` and `[]` are both empty, so the edge case never regressed). All 3 playlist tests pass.
+
+*AI use:* Minimal — the assistant confirmed Python slice semantics (`[:-1]` excludes the last element).
