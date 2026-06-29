@@ -1,5 +1,19 @@
 # Mixtape — Bug Hunt Submission
 
+## AI Usage
+
+I used an AI assistant mainly for **navigation and debugging**, not code generation — the fixes themselves were one to a few lines each.
+
+- **Orientation:** Summarized the role of each `services/` file and traced the route → service call chains (e.g. share/rate → notification) to build the codebase map before opening any issue.
+- **Tracing:** Followed each symptom from its route down to the responsible service function, confirming where the streak is *written* (`record_listening_event` → `update_listening_streak`) versus *read*.
+- **Verifying assumptions:** Confirmed library semantics that the bugs hinged on — `datetime.weekday()` returns `6` for Sunday (#1), Python's `[:-1]` slice drops the last element (#5), and that SQLAlchemy's legacy Query API de-dupes ORM entities (which is why #3 didn't reproduce).
+- **Pattern comparison:** Diffed `rate_song` against the working `add_to_playlist` to confirm the missing notification step (#4).
+- **Reproduction/regression scripts:** Drafted the throwaway scripts that exercised the service functions directly against the seeded DB.
+
+All root-cause conclusions and fixes were verified by running the code and the test suite, not taken on the assistant's word.
+
+---
+
 ## Milestone 1 — Codebase Map
 
 ### Main files and their roles
