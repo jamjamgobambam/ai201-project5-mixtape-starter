@@ -117,3 +117,15 @@ def test_search_returns_empty_for_no_match(app, seed_songs):
     with app.app_context():
         results = search_songs("zzz_no_match_zzz")
         assert results == []
+
+
+def test_search_multi_tag_song_keeps_all_tags(app, seed_songs):
+    """
+    Removing the song_tags join (Issue #3 fix) must not drop tags:
+    tags are loaded via the relationship, so all three should still be present.
+    """
+    with app.app_context():
+        results = search_songs("Crown Heights")
+        matching = [r for r in results if r["title"] == "Crown Heights Anthem"]
+        assert len(matching) == 1
+        assert set(matching[0]["tags"]) == {"rap", "hip-hop", "boom bap"}
