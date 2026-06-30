@@ -65,13 +65,15 @@ The parallel rating flow: `POST /songs/<song_id>/rate` → `routes/songs.py::rat
 
 | # | Title | Service | Plan |
 |---|-------|---------|------|
-| 1 | Listening streak keeps resetting | `streak_service.py` | **Chosen** |
-| 2 | Friends Listening Now shows people from yesterday | `feed_service.py` | Candidate (stretch) |
-| 3 | Same song shows twice in search | `search_service.py` | Attempted — did not reproduce (see below) |
-| 4 | Notified on playlist-add but not on rating | `notification_service.py` | **Chosen** |
-| 5 | Last song in a playlist never shows up | `playlist_service.py` | **Chosen** |
+| 1 | Listening streak keeps resetting | `streak_service.py` | **Fixed** (core) |
+| 2 | Friends Listening Now shows people from yesterday | `feed_service.py` | **Fixed** (stretch) |
+| 3 | Same song shows twice in search | `search_service.py` | **Fixed** (stretch — see nuance below) |
+| 4 | Notified on playlist-add but not on rating | `notification_service.py` | **Fixed** (core) |
+| 5 | Last song in a playlist never shows up | `playlist_service.py` | **Fixed** (core) |
 
-**Chosen three: #1, #4, #5.**
+**Core three: #1, #4, #5. Stretch: #2, #3 — all 5 fixed.**
+
+**Regression tests:** `tests/test_notifications.py` (Issue #4), `tests/test_feed.py` (Issue #2), and an added tags-intact case in `tests/test_search.py` (Issue #3). Full suite: 18 passing.
 
 ---
 
@@ -150,3 +152,27 @@ Searching for the 3-tag song "Crown Heights Anthem" returned `count=1`, not a du
 **My fix and side-effect check:** After the `db.session.commit()` in `rate_song`, I added the same notification pattern used by `add_to_playlist`: `if song.shared_by != user_id:` create a `song_rated` notification for `song.shared_by` with body `"{rater.username} rated your song '{song.title}' N star(s)."`. The `!= user_id` guard prevents self-rating notifications, matching the playlist path's `!= added_by_user_id` guard. I verified three cases by running the service directly: (1) a friend rating the sharer's song now creates exactly one `song_rated` notification, (2) a user rating their own song creates none, (3) score `1` renders as "1 star" (singular). I also confirmed the existing `song_added_to_playlist` path is untouched and the full test suite (13 tests) still passes. Test rows were deleted afterward to keep the seeded DB clean.
 
 *AI use:* Used the assistant to diff the two functions and confirm `add_to_playlist`'s notification pattern was the intended template to mirror.
+
+### Bug #2 — Friends Listening Now shows people from yesterday
+
+**How I reproduced it:** Called `get_friends_listening_now(darius.id)` against the seeded DB. The feed included `nova`, whose most recent listen was ~143 minutes earlier — someone who clearly was not listening "now." The seed file's own comments confirm the intent: events "within the past 30 minutes" should appear, while events "1–14 days ago" should not.
+
+**How I found the root cause:** Traced `GET /feed/<user_id>/listening-now` (`routes/feed.py`) → `feed_service.get_friends_listening_now`. The query logic was correct (filter friends' events newer than a cutoff, order by recency, dedupe to the most recent per friend). The cutoff is `now - RECENT_THRESHOLD`, and the module constant `RECENT_THRESHOLD = timedelta(hours=24)` was the obvious culprit — a 24-hour window literally includes all of yesterday.
+
+**The root cause:** "Listening now" is meant to be a tight, real-time window, but `RECENT_THRESHOLD` was set to 24 hours. So any friend who listened to anything in the previous day was treated as "listening now," which is exactly the reported "people from yesterday" symptom.
+
+**My fix and side-effect check:** Changed `RECENT_THRESHOLD` from `timedelta(hours=24)` to `timedelta(minutes=30)`, matching the seed's documented "within the past 30 minutes" intent. After re-seeding, darius's feed correctly shows only `simone` (15 min ago) and drops the ~2-hour-ago listener. I verified both sides of the boundary with a regression test (`tests/test_feed.py`): a friend listening 10 minutes ago appears, a friend whose most recent listen was 5 hours ago does not. The `get_activity_feed` function is intentionally unfiltered by recency (per its docstring) and does not use this constant, so it is unaffected.
+
+*AI use:* Used the assistant to confirm the threshold constant was the only recency control and to cross-check the seed comments describing expected behavior.
+
+### Bug #3 — The same song keeps showing up twice in search
+
+**How I reproduced it (attempted):** This is the one bug whose *visible* symptom does not reproduce in this environment. Searching for the 3-tag song returned `count=1`, and a brute-force pass over 47 query words produced **zero** duplicate titles. The latent cause is real, though: the raw SQL behind the search emits **3 rows** for a song with 3 tags. SQLAlchemy 2.0's legacy `Query` API automatically de-duplicates ORM entities by primary key, which masks the duplication before it reaches the user.
+
+**How I found the root cause:** Traced `GET /songs/search` (`routes/songs.py`) → `search_service.search_songs`. The query did `db.session.query(Song).outerjoin(song_tags, ...)` but filtered only on `Song.title`/`Song.artist` and selected only `Song`. The join contributes nothing to filtering or selection — its only effect is to multiply result rows by a song's tag count. Confirming the raw SQL returned 3 rows for a 3-tag song (vs. 1 after ORM de-dup) pinpointed the join as the sole source of any duplication.
+
+**The root cause:** The `outerjoin(song_tags)` is unnecessary and is the latent source of duplicate rows: it produces one row per (song, tag) pair, so a song with N tags yields N rows. Tags are not needed from the join at all — `Song.to_dict()` loads them through the `tags` relationship (`lazy="subquery"`). The duplication is currently hidden only by the ORM's automatic entity de-duplication, so the code is one refactor (e.g. a `select()` style query, or selecting a joined column) away from showing real duplicates.
+
+**My fix and side-effect check:** Removed the `outerjoin(song_tags)` clause entirely (and the now-unused `Tag`/`song_tags` imports), so the query filters on title/artist and returns each matching song exactly once by construction — independent of any ORM de-dup behavior. I verified search results are unchanged and that tags are still fully populated: searching "Borough" still returns "Crown Heights Anthem" once with all three tags `['rap', 'hip-hop', 'boom bap']`. Added `test_search_multi_tag_song_keeps_all_tags` to lock that the join removal did not drop tags. All existing search tests still pass.
+
+*AI use:* Used the assistant to verify SQLAlchemy's legacy-`Query` auto-de-duplication behavior (which explained why the symptom didn't reproduce) and to confirm the join was contributing nothing to the result.
