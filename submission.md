@@ -318,3 +318,34 @@ The streak logic added a weekday guard that blocks increments on Sundays. In Pyt
   - `pytest -q tests/test_streaks.py::test_streak_does_not_double_count_same_day`
   - `pytest -q tests/test_streaks.py::test_streak_resets_after_skipped_day`
   - `pytest -q tests/test_streaks.py::test_streak_increments_on_sunday`
+
+### 1. Issue number and title
+Issue #4 — I got notified when a friend added my song to a playlist but not when they rated it
+
+### 2. How you reproduced it
+- Built minimal in-memory state with two users (`owner`, `friend`) and one song shared by `owner`.
+- Called `rate_song(friend_id, song_id, 5)`.
+- Queried `get_notifications(owner_id)`.
+- Observed: rating was saved, but owner notification list remained empty.
+
+### 3. How you found the root cause
+- Navigation path (top-down):
+  1. `routes/songs.py` (`POST /songs/<song_id>/rate` -> `rate_song`)
+  2. `services/notification_service.py` (`rate_song` implementation)
+  3. Same file's `add_to_playlist` as a known-good comparison path
+- Confidence moment: `add_to_playlist` explicitly calls `create_notification(...)`, while `rate_song` commits and returns without any notification call.
+
+### 4. The root cause
+The rating flow persisted `Rating` records but never created a corresponding `Notification` for the original sharer. The code handled validation and upsert correctly, but omitted the notification side effect entirely, so no notification rows were produced for rating events.
+
+### 5. Your fix and side-effect check
+- Fix: in `rate_song`, after saving the rating, added:
+  - conditional notification creation when `song.shared_by != user_id`
+  - notification type `song_rated`
+  - body including rater username, song title, and score
+- Why this works: rating interactions now emit a notification to the song owner, matching expected behavior and existing interaction-notification pattern.
+- Side-effect checks run:
+  - `pytest -q tests/test_notifications.py::test_rate_song_creates_notification_for_sharer`
+  - `pytest -q tests/test_notifications.py::test_rate_song_self_rating_does_not_notify`
+  - `pytest -q tests/test_streaks.py`
+  - `pytest -q tests/test_playlists.py`
