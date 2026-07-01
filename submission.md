@@ -287,3 +287,34 @@ The service correctly queried and ordered all playlist songs, then mistakenly re
   - `pytest -q tests/test_playlists.py::test_playlist_returns_all_songs`
   - `pytest -q tests/test_playlists.py::test_playlist_returns_songs_in_order`
   - `pytest -q tests/test_playlists.py::test_empty_playlist_returns_empty_list`
+
+### 1. Issue number and title
+Issue #1 — My listening streak keeps resetting
+
+### 2. How you reproduced it
+- Ran: `pytest -q tests/test_streaks.py::test_streak_increments_on_sunday`
+- Data condition: user with Saturday listen followed by Sunday listen.
+- Trigger: two sequential calls to `update_listening_streak` with Saturday then Sunday datetimes.
+- Observed: streak became `1` instead of incrementing to `2`.
+
+### 3. How you found the root cause
+- Navigation path (top-down):
+  1. `tests/test_streaks.py` (Sunday-specific failing scenario)
+  2. `routes/songs.py` (`POST /songs/<song_id>/listen` calls `record_listening_event`)
+  3. `services/streak_service.py` (`record_listening_event` -> `update_listening_streak`)
+- Confidence moment: found increment branch `elif days_since_last == 1 and today.weekday() != 6`, which excludes Sunday from consecutive-day increments.
+
+### 4. The root cause
+The streak logic added a weekday guard that blocks increments on Sundays. In Python, `datetime.weekday()` returns `6` on Sunday, so a valid consecutive-day transition into Sunday (`days_since_last == 1`) was incorrectly routed to the reset branch. This caused Sunday listens to reset streaks instead of incrementing them.
+
+### 5. Your fix and side-effect check
+- Fix: removed the unnecessary weekday condition, changing:
+  - `elif days_since_last == 1 and today.weekday() != 6:`
+  - to `elif days_since_last == 1:`
+- Why this works: consecutive-day streak increments now depend only on date gap, which matches the documented streak rules.
+- Side-effect checks run:
+  - `pytest -q tests/test_streaks.py::test_streak_starts_at_1_for_new_user`
+  - `pytest -q tests/test_streaks.py::test_streak_increments_on_consecutive_day`
+  - `pytest -q tests/test_streaks.py::test_streak_does_not_double_count_same_day`
+  - `pytest -q tests/test_streaks.py::test_streak_resets_after_skipped_day`
+  - `pytest -q tests/test_streaks.py::test_streak_increments_on_sunday`
