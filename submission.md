@@ -30,7 +30,9 @@ Required screenshot: git log --oneline on bugfix/mixtape showing separate commit
 
 Paste your screenshot below this line before submission:
 
-![git log --oneline on bugfix-mixtape branch showing separate fix commits](REPLACE_WITH_YOUR_SCREENSHOT_PATH)
+![git log --oneline on bugfix/mixtape branch showing separate fix commits](git-log-oneline-bugfix-mixtape.png)
+
+
 
 ## 1) Main files and responsibilities
 
