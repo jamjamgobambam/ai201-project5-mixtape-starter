@@ -1,5 +1,37 @@
 # Mixtape Codebase Map
 
+## AI usage
+
+I used AI as a code-reading partner, not as an autonomous bug finder.
+
+- What I asked AI to do:
+  - Summarize each service module's responsibilities so I could build a codebase map quickly.
+  - Trace call chains from route to service for concrete actions (rating a song, listening to a song, viewing playlist songs).
+  - Explain suspicious functions I had already located, especially edge-case logic in `update_listening_streak`, structural differences between `add_to_playlist` and `rate_song`, and list slicing behavior in `get_playlist_songs`.
+  - Help format and organize findings into reproducible RCA notes.
+
+- What AI helped me understand:
+  - Where business logic consistently lives (service layer) and how routes delegate to it.
+  - Why boundary conditions were central in two bugs (Sunday streak transition and final list element truncation).
+  - How to compare a working interaction-notification path (`add_to_playlist`) with a failing one (`rate_song`) to isolate a missing side effect.
+
+- What I still had to verify myself:
+  - I validated every diagnosis by running code: targeted pytest cases and an isolated in-memory function call for notifications.
+  - I checked adjacent behavior after each fix (same-day streak, skipped-day reset, empty playlist behavior, and self-rating no-notification).
+  - I confirmed commit granularity and test pass status from actual git and pytest output.
+
+- Where AI was incomplete or potentially misleading:
+  - Issue #3 looked suspicious from code shape, but my actual run did not reproduce it in the chosen test path; this required pivoting to a different issue instead of forcing a speculative fix.
+  - High-level AI explanations were useful, but insufficient alone for root-cause claims until I confirmed exact branches/returns in the source and executed reproductions.
+
+## Screenshot evidence
+
+Required screenshot: git log --oneline on bugfix/mixtape showing separate commits for each bug fix.
+
+Paste your screenshot below this line before submission:
+
+![git log --oneline on bugfix-mixtape branch showing separate fix commits](REPLACE_WITH_YOUR_SCREENSHOT_PATH)
+
 ## 1) Main files and responsibilities
 
 ### app.py
@@ -245,19 +277,6 @@ I used a top-down navigation strategy for each bug:
   - Off-by-one truncation in return path:
     - `return [song.to_dict() for song in songs[:-1]]`
   - This always drops the final item, including non-empty valid playlists.
-
-## 8) AI usage during investigation
-
-How AI was used in this phase (and how it was constrained):
-- I first found suspicious code manually by tracing route -> service -> return branches.
-- I used AI to summarize and explain already-located functions (`update_listening_streak`, `rate_song`, `get_playlist_songs`) and to sanity-check edge-case reasoning.
-- I did not let AI pick root causes before reading the relevant code paths myself.
-- I verified each diagnosis with executable evidence:
-  - targeted pytest failures for Issues #1 and #5,
-  - isolated in-memory service call for Issue #4.
-
-Why this mattered:
-- It prevented plausible-but-wrong diagnoses and kept the RCA anchored to observed control flow and actual function outputs.
 
 ## 9) Fixed bug entries (required RCA format)
 
