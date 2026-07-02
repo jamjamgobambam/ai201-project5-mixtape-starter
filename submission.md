@@ -1,3 +1,19 @@
+# AI Usage
+
+I used Claude Code (Claude Sonnet 5) throughout the investigation and fixing phases of this project — for tracing call chains, writing throwaway reproduction scripts, and reviewing my own documentation for accuracy. Some specific examples:
+
+- **Tracing call chains instead of jumping straight to the file named in the issue table.** For each bug I had it start at the route (e.g. `routes/songs.py`'s `/rate` endpoint) and read forward into the actual service function, rather than assuming the bug lived wherever the README pointed. For Issue #4, I asked it to read `add_to_playlist()` and `rate_song()` side by side and describe the structural difference between them — that comparison is what surfaced that `rate_song()` never calls `create_notification()`, since both functions otherwise follow the same shape.
+
+- **Writing controlled reproduction scripts before touching fix code.** For Issue #1, it wrote a small script using the app context directly (not the Flask dev server) that constructed a `User` with `last_listened_at` on a Saturday and called `update_listening_streak()` with `now` on the following Sunday, to see directly whether the streak incremented or reset. I reran these scripts myself before accepting any diagnosis, rather than trusting the printed output as-is.
+
+- **A case where its first theory was wrong.** For the "duplicate search results" bug (Issue #3), it assumed the standard SQLAlchemy gotcha — a `.join()` to a one-to-many table without `.distinct()` causing duplicate rows — and wrote a repro script expecting a 3-tag song to show up 3 times. It came back as 1. Instead of accepting the mismatch, I had it dig further: it checked the raw SQL (which does fan out to 3 rows), then the ORM query (which returns 1), and eventually ran the project's own `tests/test_search.py`, which has a test explicitly commented "bug causes it to be 3" — and that test currently passes. The plausible-looking root cause didn't actually hold for this codebase's installed SQLAlchemy version (2.0.51's legacy `Query` API auto-deduplicates full-entity results by primary key). We dropped that bug rather than "fixing" something that didn't reproduce, and picked Issue #4 instead.
+
+- **Catching a documentation/code mismatch after the fact.** After all three fixes were committed, I asked it to review the submission doc against the actual committed code. It found that the Issue #2 write-up said `RECENT_THRESHOLD` was fixed to 5 minutes, but the committed code actually has 30 minutes — I'd changed the value in the editor after we discussed a seed-data timing mismatch, and the commit went through without it re-checking the file first. It re-ran the reproduction against the real committed value, confirmed the bug was still fixed and that 30 minutes actually resolves the seed-data mismatch rather than creating a new one, and corrected the entry in a separate commit. I would have missed this myself if I hadn't asked for that cross-check.
+
+- **What I verified myself rather than taking its word for it.** For each fix, I reran the relevant pytest file myself (not just the new scratch scripts) to check for regressions — e.g. `tests/test_streaks.py` after the Issue #1 fix, `tests/test_search.py` while investigating Issue #3. For Issues #1 and #3 specifically, I asked it to demonstrate the bug first and then independently reran its repro scripts myself before agreeing the diagnosis was right, instead of letting it fix the bug on the first pass.
+
+---
+
 # Codebase Map
 
 ## Overview
