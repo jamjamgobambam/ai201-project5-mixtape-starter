@@ -192,3 +192,34 @@ don't call it is exactly how Issue #4 was found.
   no friends still returns `[]`. New regression tests in `tests/test_feed.py` assert a 3-hour-old
   friend is excluded, a 15-minute-old friend is included, per-friend dedup holds, and the no-friends
   case returns empty. 3 passed.
+
+### Issue #3: The same song keeps showing up twice in search
+
+- **How you reproduced it — and the honest result:** I tried to reproduce a user-visible duplicate
+  and **could not**, which turned out to be the important finding. The seed data has songs with 3+
+  tags precisely to trigger this, so I ran `search_songs("Crown")` (a 3-tag song) — it returned the
+  song **once**, and the existing test `test_search_no_duplicates_multi_tag_song` already **passes**.
+  To understand why, I compared the raw SQL to the service output: the underlying
+  `outerjoin(song_tags)` query returns **3 rows** for that song (one per tag), but
+  `db.session.query(Song).all()` returns **1** entity. So the duplicate exists at the row level but
+  never reaches the user.
+- **How you found the root cause:** I read `search_service.search_songs()` and saw it outer-joins
+  `song_tags` with no `.distinct()` — the classic setup for join fan-out. I confirmed the fan-out with
+  a direct probe (raw row count = 3 vs entity count = 1). The reason it doesn't surface is that
+  SQLAlchemy's ORM **deduplicates mapped entities by primary-key identity** within a result set, so
+  the identical `Song` rows collapse to one object before `to_dict()` runs.
+- **The root cause:** The query joins `song_tags` even though tags are neither filtered on nor
+  selected in this function (tags are loaded separately through the `Song.tags` relationship, which is
+  `lazy="subquery"`). That unnecessary join multiplies rows by a song's tag count. Today the ORM's
+  identity de-duplication hides it, so it is a **latent** defect rather than a live one — but it would
+  immediately produce duplicates the moment anyone switched to a column/`.scalars()` query, added
+  `.count()`/pagination, or applied `.distinct()` elsewhere in the chain.
+- **Your fix and side-effect check:** I removed the `outerjoin(song_tags)` entirely (and the now-unused
+  `Tag`/`song_tags` imports), leaving a plain `WHERE title ILIKE … OR artist ILIKE …`. This removes the
+  duplication at its source and expresses the query's real intent. Side-effect check: all five
+  `tests/test_search.py` cases still pass (matching, empty result, and the no-duplicate cases for
+  0/1/3-tag songs), and I confirmed each result dict still carries its full `tags` list on the seeded
+  data (`Crown Heights Anthem` → `['rap', 'hip-hop', 'boom bap']`) — proving tags come from the
+  relationship, not the dropped join. 5 passed. *(Note: because the ORM already collapses duplicates,
+  the dict-level tests can't distinguish before/after; the guarantee here is the removal of the
+  fan-out at the query level, documented in an inline comment.)*
