@@ -164,3 +164,31 @@ don't call it is exactly how Issue #4 was found.
   untouched (both the insert and update-existing paths still work), that rating your own song produces
   no notification, and that re-rating (the update path) still fires a notification. New regression
   tests in `tests/test_notifications.py` cover all three cases. 3 passed.
+
+### Issue #2: Friends Listening Now shows people from yesterday
+
+- **How you reproduced it:** I re-seeded the database and probed the events directly. The seed data
+  deliberately splits listening events into "recent" (10–20 minutes old, meant to appear) and "older"
+  (2h+, meant not to appear). I counted how many events pass each cutoff:
+  the current 24-hour window admitted 6 events with ages `[10, 15, 20, 120, 600, 1080]` minutes — i.e.
+  it included the 2-hour, 10-hour, and 18-hour events — whereas a 30-minute window admitted only the
+  `[10, 15, 20]`-minute events. That directly shows friends from earlier in the day (and yesterday)
+  leaking into a feed that is supposed to mean "right now."
+- **How you found the root cause:** I traced `GET /feed/<user_id>/listening-now` →
+  `routes/feed.py:listening_now()` → `feed_service.get_friends_listening_now()`. The query logic is
+  correct: it filters `ListeningEvent.listened_at >= cutoff`, orders by most recent, and dedupes to
+  one row per friend. The only suspect was `cutoff = now - RECENT_THRESHOLD`, so I looked at the
+  module-level constant: `RECENT_THRESHOLD = timedelta(hours=24)`.
+- **The root cause:** The recency window was 24 hours. "Friends Listening Now" is meant to be a
+  near-real-time view, but a 24-hour cutoff turns it into a "listened at any point in the last day"
+  feed, so anyone who listened earlier today or last night still appears. The filter direction and
+  dedup were fine — only the threshold value was wrong.
+- **Your fix and side-effect check:** I changed `RECENT_THRESHOLD` to `timedelta(minutes=30)` and
+  added a comment explaining the product reasoning. The 30-minute value is a deliberate choice, not an
+  arbitrary one: it matches the seed data's own definition of recent activity ("within the past 30
+  minutes") and sits cleanly between the 20-minute events that should appear and the 2-hour events
+  that should not. Side-effect check: `get_activity_feed` in the same module is intentionally
+  *not* recency-filtered (its docstring says so) and I left it untouched; I also confirmed a user with
+  no friends still returns `[]`. New regression tests in `tests/test_feed.py` assert a 3-hour-old
+  friend is excluded, a 15-minute-old friend is included, per-friend dedup holds, and the no-friends
+  case returns empty. 3 passed.
