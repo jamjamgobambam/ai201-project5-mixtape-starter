@@ -198,3 +198,35 @@ join never contributed to the `WHERE`; (3) all 5 tests in `test_search.py` still
 the no-duplicate tests for 0-, 1-, and 3-tag songs and the empty-result test. As an alternative I
 considered `.distinct()`, but removing the pointless join addresses *why* duplication was
 possible rather than papering over it.
+
+### Issue #4 — Notified when a friend added my song to a playlist, but not when they rated it
+
+**How I reproduced it.** Using seed data, `nova` rated a song shared by `simone` and I counted
+`simone`'s notifications before and after: it stayed at **0** (expected 1). For contrast,
+`add_to_playlist` in the same module *does* generate a notification, and the seed data even
+pre-creates one "song added to playlist" notification — so the playlist path visibly works
+while the rating path does not.
+
+**How I found the root cause.** `POST /songs/<id>/rate` → `rate_song` in
+`services/notification_service.py`. Following the hint that this is architectural, not a typo, I
+compared `rate_song` line-by-line against its sibling `add_to_playlist` in the same file. Both
+load the song, resolve the acting user, and mutate data — but `add_to_playlist` ends with an
+`if song.shared_by != added_by_user_id: create_notification(...)` block, and `rate_song` simply
+`return rating` with **no notification block at all**. The two functions live side by side, so
+the omission is obvious once placed next to the working version.
+
+**The root cause.** `rate_song` never calls `create_notification`. It's not a wrong argument or
+a typo — the entire "notify the song's original sharer" step is missing from the rate flow,
+even though the notification infrastructure (`create_notification`, the `Notification` model,
+the `song_rated` type referenced in `create_notification`'s docstring) already exists and is
+used by the playlist flow.
+
+**My fix and side-effect check.** After the rating is committed, I added the same guarded
+notification the playlist flow uses:
+`if song.shared_by != user_id: create_notification(user_id=song.shared_by, notification_type="song_rated", body=f"{rater.username} rated your song '{song.title}' {score} stars.")`.
+Side effects checked: (1) `rate_song` still returns the `Rating` object, so the route response is
+unchanged; (2) the `song.shared_by != user_id` guard means rating **your own** song creates no
+notification — I verified a self-rating leaves the count unchanged, matching how
+`add_to_playlist` avoids self-notifying; (3) the rating upsert still works — re-rating updates
+the existing score (protected by the `UniqueConstraint(user_id, song_id)`) and does not create
+duplicate `Rating` rows; the notification is generated for the rating action regardless.
