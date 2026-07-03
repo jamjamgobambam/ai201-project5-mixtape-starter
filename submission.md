@@ -139,3 +139,28 @@ don't call it is exactly how Issue #4 was found.
   `[song.to_dict() for song in songs]`. Side-effect check: `test_empty_playlist_returns_empty_list`
   still passes (an empty playlist iterates to `[]` with no error), and the ordering test now passes
   because no element is dropped. The one-song edge case is also implicitly corrected. 3 passed.
+
+### Issue #4: I got notified when a friend added my song to a playlist but not when they rated it
+
+- **How you reproduced it:** There is no route that returns "was a notification created," so I
+  reproduced it at the service level. I wrote a test (`tests/test_notifications.py`) that has one user
+  rate another user's song via `rate_song`, then queries `Notification` for the sharer. On the
+  original code, zero `song_rated` notifications existed — confirming the sharer is never told their
+  song was rated. For contrast, the seed data already contains a working `song_added_to_playlist`
+  notification, so the playlist path clearly notifies and the rating path clearly does not.
+- **How you found the root cause:** The hint said this was architectural, not a typo, so I compared
+  the two interaction functions in `notification_service.py` line by line. `add_to_playlist()` ends
+  with a guarded `create_notification(...)` call to `song.shared_by`. `rate_song()` performs the
+  rating upsert, commits, and returns — with **no** `create_notification` call anywhere. The helper
+  and the recipient (`song.shared_by`) were both readily available; the call site was simply absent.
+- **The root cause:** `rate_song()` never created a notification. The notification capability exists
+  and is used by `add_to_playlist()`, but the rating flow was missing the equivalent call, so rating
+  a song produced a `Rating` row and nothing else. This is a missing-step/architectural omission, not
+  a wrong value.
+- **Your fix and side-effect check:** I added a guarded `create_notification` call at the end of
+  `rate_song()`, after the commit, notifying `song.shared_by` with type `song_rated` — mirroring
+  `add_to_playlist` exactly, including the `if song.shared_by != user_id` guard so users aren't
+  notified about rating their own songs. Side-effect check: I confirmed the rating upsert itself is
+  untouched (both the insert and update-existing paths still work), that rating your own song produces
+  no notification, and that re-rating (the update path) still fires a notification. New regression
+  tests in `tests/test_notifications.py` cover all three cases. 3 passed.
