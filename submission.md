@@ -94,3 +94,35 @@ that final step, which is exactly Issue #4.
 ## Root Cause Analyses
 
 <!-- One entry per bug, added as each fix is committed. -->
+
+### Issue #1 — My listening streak keeps resetting
+
+**How I reproduced it.** Two ways. (1) The repo already ships a test,
+`tests/test_streaks.py::test_streak_increments_on_sunday`, that listens on Saturday then Sunday
+and asserts the streak becomes 2 — it failed with `assert 1 == 2`. (2) I called
+`update_listening_streak(user, saturday)` then `update_listening_streak(user, sunday)` directly
+in a script (Saturday = `datetime(2024,6,15)`, Sunday = `2024,6,16`): the streak stayed at 1
+instead of incrementing to 2. Any consecutive listen where "today" is a Sunday failed to count.
+
+**How I found the root cause.** The route `POST /songs/<id>/listen` → `record_listening_event`
+→ `update_listening_streak` in `services/streak_service.py`. Reading that function, the streak
+math is a three-way branch on `days_since_last`. The `days_since_last == 1` branch (the
+"listened yesterday, so increment" case) had an extra condition: `and today.weekday() != 6`.
+The moment I confirmed it: `datetime.weekday()` returns **6 for Sunday**, so on Sundays that
+`and` clause is `False`, the elif is skipped, and control falls through to the `else`, which
+**resets the streak to 1**.
+
+**The root cause.** `datetime.weekday()` uses Monday=0 … Sunday=6. The condition
+`days_since_last == 1 and today.weekday() != 6` means "increment only if yesterday was
+consecutive **and today is not Sunday**." There is no valid reason to exclude Sundays — a
+Saturday→Sunday listen is just as consecutive as any other pair of days. The stray
+`today.weekday() != 6` clause caused every Sunday listen to be misclassified as a broken streak
+and reset to 1, so users who listened daily lost their streak every Sunday.
+
+**My fix and side-effect check.** I removed the `and today.weekday() != 6` clause so the branch
+is simply `elif days_since_last == 1:` — a consecutive-day listen increments the streak on any
+day of the week. Side effects checked: the other three branches are untouched, so
+`days_since_last == 0` (same day → no change), `== 1` (increment), and `>= 2` (skipped a day →
+reset to 1) all still hold. I re-ran the full `test_streaks.py` suite: all 5 tests pass
+(previously 4/5), including `test_streak_does_not_double_count_same_day` and
+`test_streak_resets_after_skipped_day`, confirming the reset-on-real-gap behavior still works.
