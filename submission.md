@@ -230,3 +230,31 @@ notification — I verified a self-rating leaves the count unchanged, matching h
 `add_to_playlist` avoids self-notifying; (3) the rating upsert still works — re-rating updates
 the existing score (protected by the `UniqueConstraint(user_id, song_id)`) and does not create
 duplicate `Rating` rows; the notification is generated for the rating action regardless.
+
+### Issue #5 — The last song in a playlist never shows up
+
+**How I reproduced it.** The seeded playlist "Late Night Vibes" has **7** entries in
+`playlist_entries`, but `get_playlist_songs()` returned only **6** song dicts. The repo's own
+`test_playlist_returns_all_songs` (a 5-song playlist) failed asserting `len == 5` (got 4), and
+`test_playlist_returns_songs_in_order` failed because `"Track 5"` was missing from the tail.
+
+**How I found the root cause.** `GET /playlists/<id>/songs` → `get_playlist_songs` in
+`services/playlist_service.py`. The query is correct — it joins `playlist_entries`, filters by
+`playlist_id`, and orders by `asc(playlist_entries.c.position)`, so `songs` is the full, ordered
+list. The bug is on the very last line: `return [song.to_dict() for song in songs[:-1]]`. The
+`[:-1]` slice drops the final element. The function's own docstring ("returns **all** songs in
+the playlist") contradicts the code, which confirmed the slice was the defect, not intended
+behavior.
+
+**The root cause.** The list slice `songs[:-1]` returns every element **except the last one**.
+Because the query already orders by ascending position, "the last element" is always the
+highest-position (most recently added) song — so the final song in every non-empty playlist was
+silently omitted. It also means a 1-song playlist returned an empty list.
+
+**My fix and side-effect check.** I changed `songs[:-1]` to `songs`, so all rows are serialized.
+Side effects checked on both sides of the boundary: (1) the empty-playlist case still works —
+`test_empty_playlist_returns_empty_list` passes, since iterating an empty list yields `[]` (the
+`[:-1]` happened to also return `[]` there, so that case never exposed the bug); (2) ordering is
+unchanged — `test_playlist_returns_songs_in_order` now sees all 5 tracks in position order; (3)
+the seeded 7-entry playlist now returns 7. All 3 tests in `test_playlists.py` pass (previously
+1/3).
