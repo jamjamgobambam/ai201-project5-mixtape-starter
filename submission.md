@@ -158,3 +158,43 @@ nova's feed correctly shows all three friends — while nova's 122-minute-old ev
 stale nova event, is now empty). I also confirmed the change does not touch `get_activity_feed`,
 which is intentionally *not* recency-filtered (its docstring says so) and still returns the most
 recent N events regardless of age.
+
+### Issue #3 — The same song keeps showing up twice in search
+
+**How I reproduced it.** This one was subtle and taught me not to trust a first read. Calling
+`search_songs()` on a 3-tag song (e.g. `"Crown Heights Anthem"`, or by artist `"Static Era"`)
+returned the song **once**, and the repo's own `test_search_no_duplicates_multi_tag_song`
+*passed*. So at the public-API level the duplicate did not appear. To find where duplication
+actually comes from, I ran the same query as a raw Core `select(...)` with `.scalars().all()`
+(which does **not** de-duplicate): it returned **3 rows** for the 3-tag song and 3 for another
+3-tag song — exactly one row per tag. So the duplication is real and lives in the query; it's
+just being hidden.
+
+**How I found the root cause.** `GET /songs/search` → `search_songs` in
+`services/search_service.py`. The query does
+`db.session.query(Song).outerjoin(song_tags, Song.id == song_tags.c.song_id).filter(title/artist ILIKE ...)`.
+The `song_tags` association table has one row per (song, tag) pair, so a song with N tags
+produces N joined rows. The confirming moment was comparing the raw `select` (3 rows) against
+the service's `db.session.query(Song).all()` (1 row): SQLAlchemy 2.0's **legacy `Query` API
+implicitly de-duplicates full-entity results by primary-key identity**, which is the *only*
+reason the endpoint currently returns one row. The bug is latent — the join is a duplicate
+generator that happens to be masked by an implicit ORM behavior.
+
+**The root cause.** The `outerjoin(song_tags, ...)` is both **unnecessary and harmful**: tags
+are not part of the search predicate (the `WHERE` only touches `Song.title`/`Song.artist`), and
+`Song.to_dict()` already loads tags through the `tags` relationship. The join's sole effect is
+to multiply result rows one-per-tag. Any change that removed the implicit de-dup — rewriting the
+query with `select()` + `.scalars()`, adding `.count()`, paginating, or a future SQLAlchemy
+version — would immediately surface the reported "same song twice (or three times)" behavior for
+every multi-tag song.
+
+**My fix and side-effect check.** I removed the `outerjoin(song_tags, ...)` entirely (and the now
+unused `Tag`/`song_tags` imports), so the query filters on the `Song` table alone and can never
+emit more than one row per song. This fixes the root cause instead of relying on implicit
+de-dup. Side effects checked: (1) I confirmed search results **still include tags** — 
+`search_songs("Crown")` returns `tags: ['rap', 'hip-hop', 'boom bap']` — because `to_dict()`
+loads them via the relationship, not the join; (2) the matching logic is unchanged since the
+join never contributed to the `WHERE`; (3) all 5 tests in `test_search.py` still pass, including
+the no-duplicate tests for 0-, 1-, and 3-tag songs and the empty-result test. As an alternative I
+considered `.distinct()`, but removing the pointless join addresses *why* duplication was
+possible rather than papering over it.
