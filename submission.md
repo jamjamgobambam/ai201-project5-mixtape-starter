@@ -116,3 +116,26 @@ don't call it is exactly how Issue #4 was found.
   increment). Side-effect check: I re-ran all of `tests/test_streaks.py` — the new-user (streak = 1),
   same-day (no double count), and skipped-day (reset to 1) cases all still pass, so the fix corrects
   the Sunday case without weakening the reset/increment logic on other days. 5 passed.
+
+### Issue #5: The last song in a playlist never shows up
+
+- **How you reproduced it:** In the baseline test run,
+  `tests/test_playlists.py::test_playlist_returns_all_songs` failed (a 5-song playlist returned 4)
+  and `test_playlist_returns_songs_in_order` failed (the list was truncated to `["Track 1" … "Track
+  4"]`, missing `"Track 5"`). Both point at the same symptom: whatever is last in position order is
+  dropped.
+- **How you found the root cause:** I traced `GET /playlists/<id>/songs` →
+  `routes/playlists.py:get_songs()` → `playlist_service.get_playlist_songs()`. The query itself was
+  correct — it joins `Song` to the `playlist_entries` association table and orders by
+  `playlist_entries.position` ascending. The bug was in the very last line: the return statement
+  sliced the result with `songs[:-1]`. The function's own docstring says "returns all songs," so the
+  slice directly contradicts the stated intent — that mismatch made me confident this was the cause,
+  not just a suspicious line.
+- **The root cause:** `get_playlist_songs` built the fully-ordered list of songs and then returned
+  `[song.to_dict() for song in songs[:-1]]`. The `[:-1]` slice removes the final element, so the last
+  song by position is always omitted. (It also had a nastier edge: a single-song playlist would
+  return `[]`, since slicing a one-element list with `[:-1]` yields an empty list.)
+- **Your fix and side-effect check:** I changed the return to iterate over the full list —
+  `[song.to_dict() for song in songs]`. Side-effect check: `test_empty_playlist_returns_empty_list`
+  still passes (an empty playlist iterates to `[]` with no error), and the ordering test now passes
+  because no element is dropped. The one-song edge case is also implicitly corrected. 3 passed.
