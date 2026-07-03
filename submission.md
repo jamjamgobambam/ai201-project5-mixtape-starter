@@ -4,6 +4,23 @@
 **Branch:** `bugfix/mixtape`
 **Scope completed:** All 5 bugs fixed + regression tests (both stretch goals).
 
+**Test status:** `pytest tests/` → **18 passed** (13 original + 5 new). Before the fixes, 3 of
+the original tests failed (streak-on-Sunday, both playlist tests).
+
+### Commit history (`git log --oneline main..bugfix/mixtape`)
+
+```
+d37a721 test: add regression tests for feed recency (#2) and rating notifications (#4)
+cbb73cc fix: return all playlist songs instead of dropping the last one          (#5)
+e75645f fix: notify song sharer when their song is rated                         (#4)
+9eb40c2 fix: remove unnecessary song_tags join that duplicated search results    (#3)
+f4327db fix: narrow 'listening now' window from 24h to 30m                       (#2)
+416aa93 fix: count Sunday listens in streak instead of resetting                 (#1)
+b781865 docs: add codebase map and submission scaffold
+```
+
+One `fix:` commit per bug, conventional format, each with its RCA written in the same commit.
+
 ---
 
 ## AI Usage
@@ -258,3 +275,70 @@ Side effects checked on both sides of the boundary: (1) the empty-playlist case 
 unchanged — `test_playlist_returns_songs_in_order` now sees all 5 tracks in position order; (3)
 the seeded 7-entry playlist now returns 7. All 3 tests in `test_playlists.py` pass (previously
 1/3).
+
+---
+
+## Regression Tests (stretch)
+
+Bugs #1, #3, and #5 already had tests in the repo that asserted the correct behavior and failed
+against the buggy code, so they served as ready-made regressions. Bugs **#2 and #4 had no test
+coverage**, so I added two new files there:
+
+- `tests/test_feed.py` — asserts a friend who last listened **2 hours ago** (and **25 hours
+  ago**) is excluded from "listening now", while a **5-minute-ago** listen is included.
+- `tests/test_notifications.py` — asserts that rating a friend's song creates a `song_rated`
+  notification for the sharer, and that rating your **own** song creates none.
+
+I verified these are genuine regressions by checking out the exact pre-fix version of each
+service file (the parent commit of each fix) and re-running: `test_listen_two_hours_ago_is_excluded`
+and `test_rating_notifies_sharer` both **failed** on the buggy code and **pass** on the fixed
+code.
+
+---
+
+## AI Usage (detailed)
+
+I used an AI assistant (Claude) throughout, mostly for **navigating and tracing unfamiliar code**
+and for **verifying hypotheses by actually running code**. I deliberately did not ask it to
+"find the bugs" cold — per the project's own advice, that tends to produce plausible-but-wrong
+answers. The workflow was consistently: *I read the code → AI helped me summarize/trace it → I
+confirmed by running it.*
+
+**Where AI genuinely helped:**
+- **Codebase orientation.** I had it summarize each `services/` module and the models, and trace
+  the route → service call chains (e.g. rate-a-song and view-a-playlist). This is most of the
+  codebase map above. I cross-checked every claim against the actual files.
+- **Line-by-line structural comparison (Issue #4).** Asking "what's the structural difference
+  between `add_to_playlist` and `rate_song`?" made the missing `create_notification` block
+  obvious — the two functions are near-identical up until the notification step. This matched
+  the project's own hint that #4 is architectural, not a typo.
+- **`datetime.weekday()` semantics (Issue #1).** Once I'd narrowed the streak bug to the
+  `today.weekday() != 6` clause, I confirmed with AI that `weekday()` returns Monday=0…Sunday=6,
+  which pinned Sunday as the failing day.
+- **Building reproduction harnesses.** I used AI to scaffold small scripts that seeded the DB and
+  called service functions directly with controlled inputs — much faster than firing HTTP
+  requests.
+
+**Where AI was incomplete or pointed the wrong way (and I had to verify myself):**
+- **Issue #3 was the clearest case.** On a first read, the AI's diagnosis was the obvious one:
+  "the `outerjoin` on `song_tags` has no `distinct()`, so multi-tag songs duplicate." That's
+  *directionally* right about the mechanism but **wrong about the observable behavior** — when I
+  actually ran `search_songs()` on a 3-tag song it returned the song **once**, and the repo's own
+  duplicate test passed. I only found the real story by running the query two ways: a raw
+  `select(...).scalars().all()` returned **3 rows**, while `db.session.query(Song).all()` returned
+  1. The truth is that SQLAlchemy 2.0's legacy `Query` API silently de-duplicates entities by
+  identity, so the duplication is *latent* and masked, not currently visible. The AI's first
+  answer would have led me to "add `.distinct()` and move on" without understanding that the join
+  itself is unnecessary and the correctness was resting on an implicit ORM behavior. Reading and
+  running the code myself is what caught this.
+- **Issue #2 reproduction.** The AI correctly flagged the 24-hour `RECENT_THRESHOLD` as too wide,
+  but its initial reproduction assumed any user would see stale friends. In practice the
+  per-friend de-duplication *hides* the bug for most users (a friend with a recent event masks
+  their own stale one). I had to enumerate every user's feed to find that only `kenji`/`darius`/
+  `simone` actually exposed it (via `nova`, who last listened 2h ago). The general explanation
+  was right; the specific repro needed me to check the data.
+
+Net: AI was a strong accelerator for reading and tracing, and for turning a narrowed hypothesis
+into a confirmed diagnosis — but every root cause in this document was verified by running the
+code, and in at least one case (Issue #3) that verification directly contradicted the AI's
+first, plausible-sounding explanation.
