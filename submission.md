@@ -126,3 +126,35 @@ day of the week. Side effects checked: the other three branches are untouched, s
 reset to 1) all still hold. I re-ran the full `test_streaks.py` suite: all 5 tests pass
 (previously 4/5), including `test_streak_does_not_double_count_same_day` and
 `test_streak_resets_after_skipped_day`, confirming the reset-on-real-gap behavior still works.
+
+### Issue #2 — Friends Listening Now shows people from yesterday
+
+**How I reproduced it.** I seeded the DB and called `get_friends_listening_now(user_id)` for
+every user, printing how long ago each returned friend actually listened. Three users
+(`darius`, `simone`, `kenji`) had **nova** returned as "listening now" even though nova's most
+recent listen was **122 minutes ago**. The seed data comments confirm the intent: events
+"within the past 30 minutes … should appear in 'listening now'", while events "1–14 days ago …
+should NOT appear." So a 2-hour-old listen showing up is the reported bug.
+
+**How I found the root cause.** `GET /feed/<id>/listening-now` → `get_friends_listening_now` in
+`services/feed_service.py`. The function is correct in shape — it computes
+`cutoff = now - RECENT_THRESHOLD`, filters `ListeningEvent.listened_at >= cutoff`, and
+de-duplicates to one (most recent) event per friend. The de-dup is why the bug is intermittent:
+if a friend *also* has a truly-recent event, only that recent one is shown and the staleness is
+hidden. It only surfaces for a friend whose single most-recent event is stale-but-within-window
+(nova, for kenji/darius/simone). That pointed me one line up, to the module constant.
+
+**The root cause.** `RECENT_THRESHOLD = timedelta(hours=24)`. "Friends Listening Now" is meant
+to show who is *currently* listening, but a 24-hour window admits anyone who listened at any
+point in the last day — i.e. "people from yesterday." The filter and de-dup logic were both
+correct; the window constant was simply an order-of-magnitude too large for the feature's
+meaning.
+
+**My fix and side-effect check.** I changed `RECENT_THRESHOLD` to `timedelta(minutes=30)`,
+matching the "past 30 minutes" definition documented in the seed data. Boundary check on both
+sides: after the fix, the three sub-30-minute seed events (10/15/20 min ago) still appear —
+nova's feed correctly shows all three friends — while nova's 122-minute-old event and all the
+2h–14-day events are correctly excluded (kenji's feed, whose only in-window candidate was that
+stale nova event, is now empty). I also confirmed the change does not touch `get_activity_feed`,
+which is intentionally *not* recency-filtered (its docstring says so) and still returns the most
+recent N events regardless of age.
