@@ -29,3 +29,6 @@ build/
 # Editor
 .vscode/
 .idea/
+.pytest_cache
+instance/
+.venv/

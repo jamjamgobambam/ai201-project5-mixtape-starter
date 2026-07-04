@@ -59,7 +59,7 @@ def test_playlist_returns_all_songs(app, seed_playlist):
     with app.app_context():
         playlist_id = seed_playlist["playlist"].id
         songs = get_playlist_songs(playlist_id)
-        assert len(songs) == 5  # Bug causes this to return 4
+        assert len(songs) == 5
 
 
 def test_playlist_returns_songs_in_order(app, seed_playlist):

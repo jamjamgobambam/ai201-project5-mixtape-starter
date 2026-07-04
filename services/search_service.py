@@ -24,7 +24,6 @@ def search_songs(query: str) -> list[dict]:
     """
     results = (
         db.session.query(Song)
-        .outerjoin(song_tags, Song.id == song_tags.c.song_id)
         .filter(
             db.or_(
                 Song.title.ilike(f"%{query}%"),
