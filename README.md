@@ -13,10 +13,10 @@ ai201-project5-mixtape-starter/
 ├── app.py                      # Flask app factory and DB setup
 ├── models.py                   # SQLAlchemy models for all entities
 ├── routes/
-│   ├── songs.py                # Song sharing, search, and rating routes
-│   ├── playlists.py            # Playlist creation and song management
-│   ├── users.py                # User profiles, streaks, notifications
-│   └── feed.py                 # Friends listening now, activity feed
+    │   ├── songs.py                # Song sharing, search, and rating routes
+    │   ├── playlists.py            # Playlist creation and song management
+    │   ├── users.py                # User profiles, streaks, notifications
+    │   └── feed.py                 # Friends listening now, activity feed
 ├── services/
 │   ├── streak_service.py       # Listening streak logic
 │   ├── feed_service.py         # Friends listening now feed logic
