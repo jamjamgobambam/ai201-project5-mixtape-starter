@@ -117,3 +117,18 @@ def test_search_returns_empty_for_no_match(app, seed_songs):
     with app.app_context():
         results = search_songs("zzz_no_match_zzz")
         assert results == []
+
+
+def test_search_no_duplicate_song_ids(app, seed_songs):
+    """
+    Regression test: search results should have unique song IDs.
+
+    This catches issues where a join could cause the same song to appear
+    multiple times in results. Without deduplication, a song with N tags
+    would appear N times (one per join row). This test verifies each song
+    appears only once by song ID.
+    """
+    with app.app_context():
+        results = search_songs("Crown")
+        song_ids = [r["id"] for r in results]
+        assert len(song_ids) == len(set(song_ids)), "Duplicate song IDs found in search results"
