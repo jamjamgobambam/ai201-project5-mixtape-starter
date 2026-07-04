@@ -67,10 +67,15 @@ def update_listening_streak(user: User, now: datetime) -> None:
     last_date = last_listened.date()
     days_since_last = (today - last_date).days
 
+    print(f"[DEBUG] today={today} weekday={today.weekday()} last_date={last_date} days_since_last={days_since_last}")
+
+
     if days_since_last == 0:
         # Already updated today — no change needed
         return
-    elif days_since_last == 1 and today.weekday() != 6:
+    #the fix
+    elif days_since_last == 1:
+        # elif days_since_last == 1:
         user.listening_streak += 1
     else:
         user.listening_streak = 1
