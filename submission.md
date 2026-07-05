@@ -53,7 +53,7 @@ business logic lives in `services/`.
 |------|---------------|
 | `app.py` | Flask application factory (`create_app`). Configures the DB, registers the four blueprints under `/songs`, `/playlists`, `/users`, `/feed`, and calls `db.create_all()`. Owns the shared `db` object. |
 | `models.py` | All SQLAlchemy models: `User`, `Tag`, `Song`, `ListeningEvent`, `Rating`, `Playlist`, `Notification`, plus three association tables (`friendships`, `song_tags`, `playlist_entries`). `playlist_entries` is a join table with an explicit `position` column — songs have an ordered place in a playlist, not just insertion order. |
-| `seed_data.py` | Drops and recreates the DB with realistic fixtures: 5 users with friendships, 25 songs (deliberately including 0-, 1-, and 3+-tag songs to expose Issue #3), 3 playlists, recent + old listening events, and one working playlist-add notification (the reference pattern for Issue #4). |
+| `seed_data.py` | Drops and recreates the DB with realistic fixtures: 5 users with bidirectional friendships, songs with varying tag counts (0, 1, and 3+ tags), 3 playlists with ordered entries, both recent and older listening events, existing streak values, and an example "song added to playlist" notification. |
 | `routes/songs.py` | `GET /songs/search`, `GET /songs/<id>`, `POST /songs/<id>/rate`, `POST /songs/<id>/listen`. |
 | `routes/playlists.py` | Create playlist, get metadata, `GET /playlists/<id>/songs`, add song. |
 | `routes/users.py` | User profile, `GET /users/<id>/streak`, notifications list, mark-as-read. |
@@ -78,8 +78,11 @@ same way `add_to_playlist` notifies the sharer when a song is added to a playlis
 ### Pattern noticed
 
 Every route delegates immediately to a service function and does only I/O
-concerns (parsing, status codes). This is why the README says "the bugs live in
-the `services/` layer" — and all five did.
+concerns (parsing request data, choosing status codes, serializing JSON). All
+business logic — streak rules, recency filtering, search, notifications,
+playlist ordering — lives in the `services/` layer, and models expose a
+`to_dict()` for serialization. So the natural place to reason about behavior is
+the service functions, not the routes.
 
 ---
 
@@ -203,12 +206,52 @@ the `services/` layer" — and all five did.
 
 ## Regression Tests
 
-| Test file | Covers | Would have caught |
-|-----------|--------|-------------------|
-| `tests/test_streaks.py` (existing) | Issue #1 | `test_streak_increments_on_sunday` |
-| `tests/test_search.py` (existing) | Issue #3 | duplicate-count assertions |
-| `tests/test_playlists.py` (existing) | Issue #5 | count + order assertions |
-| `tests/test_feed.py` (**added**) | Issue #2 | hours-old listen excluded; 29-min boundary included |
-| `tests/test_notifications.py` (**added**) | Issue #4 | rating notifies sharer; self-rating does not |
+Every bug has a test that fails against the buggy code and passes after the fix.
+Two of these test files were written specifically for this project (Issues #2
+and #4, which had no coverage); the others already existed and were confirmed to
+encode the correct behavior.
 
-Full suite after all fixes: **19 passed** (`pytest tests/`).
+- **`tests/test_feed.py` (added) — Issue #2.** `test_hours_old_listen_excluded`
+  records a listen 3 hours ago and asserts the "listening now" feed is empty.
+  Against the buggy 24-hour `RECENT_THRESHOLD` the friend *would* appear, so the
+  assertion fails; with the 30-minute window it passes.
+  `test_boundary_just_inside_window` (29 minutes ago) guards the near side of the
+  boundary so the window can't be tightened too far.
+- **`tests/test_notifications.py` (added) — Issue #4.**
+  `test_rating_notifies_sharer` rates another user's song and asserts the sharer
+  has one `song_rated` notification. Against the buggy `rate_song` (which created
+  no notification) the count is 0 and the test fails; after the fix it is 1.
+  `test_rating_own_song_does_not_notify` confirms the self-rating guard.
+- **`tests/test_streaks.py::test_streak_increments_on_sunday` (existing) — Issue
+  #1.** Saturday→Sunday listen must leave the streak at 2. Against the buggy
+  `weekday() != 6` guard it resets to 1 and the test fails.
+- **`tests/test_search.py` (existing) — Issue #3.** Asserts a 3-tag song appears
+  once in results. Fails against the tag `outerjoin` when executed on a path that
+  doesn't uniquify entities.
+- **`tests/test_playlists.py` (existing) — Issue #5.** Asserts the playlist
+  returns all 5 songs in order. Against the `[:-1]` slice it returns 4 and the
+  test fails.
+
+Full suite: **21 passed** (`pytest tests/`) — including
+`tests/test_add_to_playlist.py`, added for the extra bug below.
+
+---
+
+## Work Beyond the Assigned Five (not required)
+
+While building a browsable web UI over the database, I found and fixed a **sixth,
+pre-existing bug** that is *not* one of the five assigned issues:
+
+- **`add_to_playlist` crashed with `NOT NULL constraint failed:
+  playlist_entries.position`.** It added songs via the `Playlist.songs`
+  relationship, which does not populate the association table's NOT-NULL
+  `position` and `added_by` columns. Fixed by inserting the entry explicitly with
+  a computed next position (`max + 1`) and the adding user; covered by
+  `tests/test_add_to_playlist.py`. Commit: `fix: populate position and added_by
+  when adding a song to a playlist`.
+
+I also added a server-rendered web UI (`routes/web.py`, `templates/`) — a
+dashboard, per-user pages, playlist views, and search — layered over the same
+services without touching the JSON API. Commit: `feat: add browsable web UI over
+the database`. These are extra credit beyond the rubric; the five required fixes
+above stand on their own as the first five `fix:` commits on the branch.
