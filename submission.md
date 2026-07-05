@@ -1,0 +1,105 @@
+# AI Usage
+
+I used Claude Code (Claude Sonnet 5) throughout the investigation and fixing phases of this project — for tracing call chains, writing throwaway reproduction scripts, and reviewing my own documentation for accuracy. Some specific examples:
+
+- **Tracing call chains instead of jumping straight to the file named in the issue table.** For each bug I had it start at the route (e.g. `routes/songs.py`'s `/rate` endpoint) and read forward into the actual service function, rather than assuming the bug lived wherever the README pointed. For Issue #4, I asked it to read `add_to_playlist()` and `rate_song()` side by side and describe the structural difference between them — that comparison is what surfaced that `rate_song()` never calls `create_notification()`, since both functions otherwise follow the same shape.
+
+- **Writing controlled reproduction scripts before touching fix code.** For Issue #1, it wrote a small script using the app context directly (not the Flask dev server) that constructed a `User` with `last_listened_at` on a Saturday and called `update_listening_streak()` with `now` on the following Sunday, to see directly whether the streak incremented or reset. I reran these scripts myself before accepting any diagnosis, rather than trusting the printed output as-is.
+
+- **A case where its first theory was wrong.** For the "duplicate search results" bug (Issue #3), it assumed the standard SQLAlchemy gotcha — a `.join()` to a one-to-many table without `.distinct()` causing duplicate rows — and wrote a repro script expecting a 3-tag song to show up 3 times. It came back as 1. Instead of accepting the mismatch, I had it dig further: it checked the raw SQL (which does fan out to 3 rows), then the ORM query (which returns 1), and eventually ran the project's own `tests/test_search.py`, which has a test explicitly commented "bug causes it to be 3" — and that test currently passes. The plausible-looking root cause didn't actually hold for this codebase's installed SQLAlchemy version (2.0.51's legacy `Query` API auto-deduplicates full-entity results by primary key). We dropped that bug rather than "fixing" something that didn't reproduce, and picked Issue #4 instead.
+
+- **Catching a documentation/code mismatch after the fact.** After all three fixes were committed, I asked it to review the submission doc against the actual committed code. It found that the Issue #2 write-up said `RECENT_THRESHOLD` was fixed to 5 minutes, but the committed code actually has 30 minutes — I'd changed the value in the editor after we discussed a seed-data timing mismatch, and the commit went through without it re-checking the file first. It re-ran the reproduction against the real committed value, confirmed the bug was still fixed and that 30 minutes actually resolves the seed-data mismatch rather than creating a new one, and corrected the entry in a separate commit. I would have missed this myself if I hadn't asked for that cross-check.
+
+- **What I verified myself rather than taking its word for it.** For each fix, I reran the relevant pytest file myself (not just the new scratch scripts) to check for regressions — e.g. `tests/test_streaks.py` after the Issue #1 fix, `tests/test_search.py` while investigating Issue #3. For Issues #1 and #3 specifically, I asked it to demonstrate the bug first and then independently reran its repro scripts myself before agreeing the diagnosis was right, instead of letting it fix the bug on the first pass.
+
+---
+
+# Codebase Map
+
+## Overview
+This repository is a small Flask application for Mixtape, a social music app where users can share songs, build playlists, rate music, track listening streaks, and view activity feeds.
+
+## Main files and responsibilities
+- app.py: creates the Flask app, configures SQLAlchemy, registers the blueprints, and initializes the database.
+- models.py: defines the SQLAlchemy models for users, songs, playlists, ratings, listening events, tags, friendships, and notifications.
+- routes/songs.py: exposes endpoints for searching songs, fetching song details, rating songs, and recording listens.
+- routes/playlists.py: exposes endpoints for creating playlists, viewing playlist data, listing playlist songs, and adding songs to playlists.
+- routes/users.py: exposes endpoints for viewing users, checking streaks, retrieving notifications, and marking notifications as read.
+- routes/feed.py: exposes endpoints for the “Friends Listening Now” feed and the general activity feed.
+- services/search_service.py: handles song search and single-song lookup.
+- services/notification_service.py: creates notifications and handles notification-producing actions such as adding songs to playlists.
+- services/streak_service.py: records listening events and updates a user’s streak based on the time between listens.
+- services/feed_service.py: builds the listening-now and activity feed from friend listening events.
+- services/playlist_service.py: handles playlist creation and ordered playlist-song retrieval.
+- seed_data.py: populates the database with starter content for development and testing.
+- tests/: contains regression tests for streaks, search, and playlist behavior.
+
+## Data flow example: adding a song to a playlist creates a notification
+A real flow in the app looks like this:
+1. A client sends a request to POST /playlists/<playlist_id>/songs in routes/playlists.py.
+2. The route validates the request and calls add_to_playlist from services/notification_service.py.
+3. The service loads the song, the playlist, and the user who added the song.
+4. If the song is not already in the playlist, it appends the song to the playlist.
+5. The service checks who originally shared the song using song.shared_by.
+6. If that sharer is not the same person who added the song, the service creates a Notification record for the sharer.
+7. The notification can later be fetched through the notifications route in routes/users.py.
+
+## Data flow example: listening to a song updates streaks
+When a user listens to a song:
+1. The client sends a request to POST /songs/<song_id>/listen.
+2. routes/songs.py calls record_listening_event in services/streak_service.py.
+3. The service creates a ListeningEvent row and updates the user’s last_listened_at and listening_streak fields.
+4. The change is committed to the database.
+
+## Patterns I noticed
+- The app uses a classic Flask blueprint structure: each feature area has its own route module.
+- Routes are thin and mostly handle request parsing and JSON formatting; business logic lives in services/.
+- The database layer is centered in models.py, with SQLAlchemy models and helper to_dict() methods used to serialize objects.
+- The code favors small, explicit functions over large classes.
+- Shared state is coordinated through the Flask-SQLAlchemy db session created in app.py.
+
+---
+
+# Root Cause Analysis
+
+## Issue #1: My listening streak keeps resetting
+
+**How I reproduced it:**
+Constructed a `User` with `listening_streak=5` and `last_listened_at` set to Saturday, Jan 7 2023, 8:00 PM UTC, then called `update_listening_streak()` directly with `now` set to Sunday, Jan 8 2023, 9:00 AM UTC — exactly one calendar day later, which by the function's own docstring ("If the user listened yesterday: streak increments by 1") should bump the streak to 6. Instead the streak reset to 1. The condition is date-dependent: I confirmed `days_since_last == 1` was true (one consecutive day) but `today.weekday()` evaluated to `6` (Sunday) on the "now" side, which is what flips the outcome from increment to reset.
+
+**How I found the root cause:**
+Started at `routes/songs.py`'s `/listen` endpoint, followed it into `record_listening_event()` in `services/streak_service.py`, which calls `update_listening_streak(user, now)`. Read the function's docstring first — it states the streak rules plainly: increment on a consecutive day, reset if more than one day passed, no mention of any day-of-week exception. Then read the actual branch: `elif days_since_last == 1 and today.weekday() != 6:`. The `and today.weekday() != 6` clause doesn't correspond to anything in the documented rules, which is what made me confident this specific clause — not the date-diff logic around it — was the root cause. I also found `tests/test_streaks.py::test_streak_increments_on_sunday`, an existing test written for exactly this scenario, and confirmed it failed (`assert 1 == 2`) while every other streak test passed, which pinpointed the bug to this one condition rather than the date-diff math in general.
+
+**The root cause:**
+The `elif` branch that increments the streak required both `days_since_last == 1` and `today.weekday() != 6`. `datetime.weekday()` returns `6` for Sunday, so any time a user's second consecutive day of listening happened to fall on a Sunday, the second condition was `False`, the whole `and` expression was `False`, and execution fell into the `else` branch that resets the streak to 1 — even though the user listened on consecutive days and should have incremented. There is no rule in the docstring or anywhere else in the function that justifies treating Sundays differently; the extra clause has no purpose the correct behavior needs, which is what made it identifiable as the bug rather than a deliberate design choice.
+
+**Your fix and side-effect check:**
+Removed the `and today.weekday() != 6` clause, leaving `elif days_since_last == 1:` so any consecutive-day listen increments the streak regardless of which day of the week it lands on. Ran the full `tests/test_streaks.py` suite afterward: all 5 tests pass, including `test_streak_increments_on_sunday` (previously failing) and `test_streak_resets_after_skipped_day` (still passing, confirming true gaps still reset). I also manually checked a case the existing tests didn't cover — skipping two days and landing on a Sunday — to make sure removing the clause didn't make the function always increment on Sundays regardless of gap size; it correctly reset to 1, confirming the fix only removes the false Sunday exception and doesn't weaken the skipped-day reset logic.
+
+## Issue #2: Friends Listening Now shows people from yesterday
+
+**How I reproduced it:**
+Seeded the database with `seed_data.py` and called `get_friends_listening_now()` as `kenji`, whose friend `nova` has a `ListeningEvent` from 2 hours before the call (from the "older events" block in `seed_data.py`) with no more recent event to mask it. With the original `RECENT_THRESHOLD = timedelta(hours=24)`, the result included nova, listed as currently listening to "Midnight Drive" despite having listened 2 hours earlier. I confirmed the threshold was the cause by rerunning the exact same call with `RECENT_THRESHOLD` set to `timedelta(minutes=30)` (monkey-patched in a scratch script between calls, rather than editing and reverting the file) — nova dropped out of the result.
+
+**How I found the root cause:**
+Started at `routes/feed.py` to find the endpoint behind "Friends Listening Now" and followed the call into `services/feed_service.get_friends_listening_now()`. The function builds `cutoff = datetime.now(timezone.utc) - RECENT_THRESHOLD` and filters `ListeningEvent.listened_at >= cutoff` — that filter is the only place recency is enforced anywhere downstream (the per-friend loop below it just picks the most recent event per friend from whatever the query already returned). That narrowed it to either the cutoff calculation or the `RECENT_THRESHOLD` constant, and the constant was defined right above the function as `timedelta(hours=24)`. Seeing a 24-hour window on a feature named "listening now" was the moment I was confident — a full day is not "now" by any reasonable definition, and nothing else in the function constrains recency.
+
+**The root cause:**
+`RECENT_THRESHOLD` was set to `timedelta(hours=24)` instead of a short, live window. The query logic itself is correct — `listened_at >= cutoff` does filter out events older than the cutoff — but because the cutoff was computed from a 24-hour-wide threshold, any listen from up to a day ago passed the filter and was presented as an in-progress listen. The function has no other mechanism for judging "is this happening now" — that guarantee rests entirely on `RECENT_THRESHOLD` being small, so a threshold sized like a daily digest window caused yesterday's listens to be shown as live ones.
+
+**Your fix and side-effect check:**
+Changed `RECENT_THRESHOLD` from `timedelta(hours=24)` to `timedelta(minutes=30)` in `services/feed_service.py` — a one-line change, since the query logic around it was already correct. I picked 30 minutes over a shorter window like 5 minutes because `seed_data.py` seeds its "recent" listening events 10-20 minutes in the past with a comment stating they should appear in "listening now" — 30 minutes is the smallest round window that still treats those as live without reintroducing anything close to the original 24-hour bug. Afterward I checked `get_activity_feed()` in the same file, since it's the other consumer of listening events: it doesn't reference `RECENT_THRESHOLD` at all and just returns the most recent N events regardless of age, so it's unaffected. I also reran the seeded "recent" events (10, 15, 20 minutes old) against the fixed threshold and confirmed all three now correctly appear in `get_friends_listening_now()`, matching what `seed_data.py`'s own comment says should happen, while nova's genuinely stale 2-hour-old event from the reproduction case above still stays excluded.
+
+## Issue #4: I got notified when a friend added my song to a playlist but not when they rated it
+
+**How I reproduced it:**
+Seeded the database, found the song "Midnight Drive" shared by `nova`, and captured `get_notifications(nova.id)` before any new activity — 1 notification (a pre-existing seeded "added to playlist" notification). Then called `rate_song(user_id=darius.id, song_id=<midnight drive id>, score=5)` as `darius`, a different user than the sharer. Re-fetched `get_notifications(nova.id)` afterward and got the same 1 notification, with no new `song_rated` entry added — confirming `rate_song()` never calls `create_notification()`, unlike `add_to_playlist()`, which does check `song.shared_by` and notify the sharer.
+
+**How I found the root cause:**
+Followed `POST /songs/<song_id>/rate` in `routes/songs.py` into `rate_song()` in `services/notification_service.py`, the same file that already implements the working notification for `add_to_playlist()`. Reading `add_to_playlist()` first gave me the correct pattern: after the state change is committed, it checks `if song.shared_by != added_by_user_id` and calls `create_notification(...)`. Reading `rate_song()` immediately after, I saw it goes through the same shape — validate, look up the song and rater, save the row, `db.session.commit()`, `return rating` — but stops there. There's no call to `create_notification` anywhere in the function. Comparing the two functions side by side (both in the same file, both mutate a row tied to a song, both know `song.shared_by`) is what made me confident the missing notification call itself was the root cause, not some deeper issue in how notifications are queried or displayed.
+
+**The root cause:**
+`rate_song()` persists the `Rating` (either creating a new one or updating an existing one) and returns, but never calls `create_notification()`. The sharer-notification behavior only exists in `add_to_playlist()`; it was never added to `rate_song()`, so saving a rating produces no corresponding notification even though the app is clearly meant to notify a song's original sharer about friend interactions with their shared songs — `add_to_playlist()` establishes that behavior is expected for one interaction type, but the same step was simply missing from the other.
+
+**Your fix and side-effect check:**
+Added the same notify-the-sharer step used in `add_to_playlist()` to the end of `rate_song()`, right after `db.session.commit()`: if `song.shared_by != user_id`, call `create_notification()` with a `song_rated` notification. Reran the reproduction script and confirmed nova now receives a new `song_rated` notification when darius rates her song. I then checked two adjacent cases to make sure the fix didn't over-notify: (1) nova rating her own shared song produces no new notification, since `song.shared_by == user_id` in that case; (2) a second friend rating the same song still produces its own notification, so the fix isn't accidentally deduplicating per-song. I also re-verified `add_to_playlist()`'s existing notification still fires correctly, confirming the change to `rate_song()` didn't affect the other notification path since they don't share any code beyond the `create_notification()` helper itself.
