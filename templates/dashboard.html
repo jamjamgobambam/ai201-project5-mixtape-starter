@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Mixtape — Home{% endblock %}
+{% block body %}
+  <h1>Welcome to Mixtape</h1>
+  <p class="sub">Share songs, build collaborative playlists, and keep your listening streak alive.</p>
+
+  <form class="inline" action="{{ url_for('web.search_page') }}" method="get" style="margin-top:18px;">
+    <input class="search" type="text" name="q" placeholder="Search songs by title or artist…">
+    <button type="submit">Search</button>
+  </form>
+
+  <h2>Members</h2>
+  <div class="grid cards">
+    {% for u in users %}
+      <a class="card" href="{{ url_for('web.user_page', user_id=u.id) }}">
+        <div class="name">{{ u.username }}</div>
+        <div class="meta">{{ u.shared_songs|length }} songs shared</div>
+        <div style="margin-top:10px;">
+          <span class="badge streak">🔥 {{ u.listening_streak }} day streak</span>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+
+  <h2>Playlists</h2>
+  <div class="grid cards">
+    {% for p in playlists %}
+      <a class="card" href="{{ url_for('web.playlist_page', playlist_id=p.id) }}">
+        <div class="name">{{ p.name }}</div>
+        <div class="meta">by {{ p.creator.username }}</div>
+        <div style="margin-top:10px;">
+          <span class="badge">🎶 {{ song_counts[p.id] }} songs</span>
+          {% if p.is_collaborative %}<span class="chip">collaborative</span>{% endif %}
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+
+  <h2>Songs ({{ songs|length }})</h2>
+  <div class="card" style="padding:0;">
+    <table>
+      <thead><tr><th>Title</th><th>Artist</th><th>Genre</th><th>Tags</th><th>Shared by</th></tr></thead>
+      <tbody>
+        {% for s in songs %}
+          <tr>
+            <td><strong>{{ s.title }}</strong></td>
+            <td>{{ s.artist }}</td>
+            <td class="muted">{{ s.genre or "—" }}</td>
+            <td>
+              {% for t in s.tags %}<span class="chip">{{ t.name }}</span>{% else %}<span class="muted">—</span>{% endfor %}
+            </td>
+            <td><a href="{{ url_for('web.user_page', user_id=s.shared_by) }}">{{ s.shared_by_user.username }}</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

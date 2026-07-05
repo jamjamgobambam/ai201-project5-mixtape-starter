@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ playlist.name }} — Mixtape{% endblock %}
+{% block body %}
+  <a class="back" href="{{ url_for('web.dashboard') }}">← Home</a>
+  <h1>{{ playlist.name }}</h1>
+  <div class="row" style="margin-bottom:6px;">
+    <span class="muted">by <a href="{{ url_for('web.user_page', user_id=playlist.created_by) }}">{{ playlist.creator.username }}</a></span>
+    <span class="badge">🎶 {{ songs|length }} songs</span>
+    {% if playlist.is_collaborative %}<span class="chip">collaborative</span>{% endif %}
+  </div>
+
+  <h2>Tracks</h2>
+  <div class="card" style="padding:0;">
+    <table>
+      <thead><tr><th>#</th><th>Title</th><th>Artist</th><th>Tags</th></tr></thead>
+      <tbody>
+        {% for s in songs %}
+          <tr>
+            <td><span class="num">{{ loop.index }}</span></td>
+            <td><strong>{{ s.title }}</strong></td>
+            <td>{{ s.artist }}</td>
+            <td>{% for t in s.tags %}<span class="chip">{{ t }}</span>{% else %}<span class="muted">—</span>{% endfor %}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="empty">This playlist is empty.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if playlist.is_collaborative %}
+    <h2>Add a song</h2>
+    <div class="card">
+      {% if available %}
+        <form class="inline" action="{{ url_for('web.add_song_action', playlist_id=playlist.id) }}" method="post">
+          <select name="song_id" required>
+            {% for s in available %}<option value="{{ s.id }}">{{ s.title }} — {{ s.artist }}</option>{% endfor %}
+          </select>
+          <span class="muted">added by</span>
+          <select name="added_by" required>
+            {% for u in users %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}
+          </select>
+          <button type="submit">+ Add</button>
+        </form>
+        <p class="muted" style="margin:10px 0 0; font-size:13px;">The song's original sharer gets notified when it's added.</p>
+      {% else %}
+        <p class="empty" style="margin:0;">Every song is already in this playlist.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}
