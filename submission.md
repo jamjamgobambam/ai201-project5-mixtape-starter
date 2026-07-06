@@ -32,3 +32,10 @@
 * **How I found the root cause:** I investigated `services/feed_service.py` and looked for the logic that defines the timeframe for the `get_friends_listening_now()` function.
 * **The root cause:** At the top of the file, `RECENT_THRESHOLD` was hardcoded to `timedelta(hours=24)`. The database query uses this threshold to filter recent events, meaning anyone who listened to a song in the last 24 hours (including yesterday) was erroneously included in the "Listening Now" feed.
 * **My fix and side-effect check:** I changed `RECENT_THRESHOLD` to `timedelta(minutes=15)`. I refreshed the browser endpoint and verified that the feed count dropped to 0, confirming that old listening events from earlier in the day were properly filtered out.
+
+### Issue #4 - I got notified when a friend added my song to a playlist but not when they rated it
+
+* **How I reproduced it:** I opened the interactive Flask shell and wrote a script to simulate a user ("nova") rating a song shared by a friend. I checked the friend's notification count before and after the rating occurred, and it remained at 0, confirming the notification was never generated.
+* **How I found the root cause:** I performed a side-by-side comparison of `add_to_playlist()` and `rate_song()` inside `services/notification_service.py`. 
+* **The root cause:** The `rate_song()` function was completely missing the code block to generate a notification. It successfully saved the rating to the database but returned the object without ever calling `create_notification()`.
+* **My fix and side-effect check:** I added an `if` statement to check that the rater is not the original sharer, followed by a call to `create_notification()` passing in the sharer's ID, a `"song_rated"` type, and a descriptive body message. Re-running the shell script confirmed the sharer's notification count successfully incremented from 0 to 1.
