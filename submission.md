@@ -86,15 +86,15 @@ Re-ran `seed_data.py` for a fresh, predictable dataset, then called the real `GE
 
 **How I found the root cause:**
 
-_TODO — Milestone 3._
+Read `get_friends_listening_now()` in `services/feed_service.py`. The comparison logic itself (`listened_at >= cutoff`, `cutoff = now - RECENT_THRESHOLD`) is straightforward and correct — it does exactly what a "within the last X" filter should do. That narrowed the question to: is `X` (`RECENT_THRESHOLD`, defined as `timedelta(hours=24)`) the right value? A function named `get_friends_listening_now`, backing a feature called "Friends Listening Now," strongly implies live/current activity — not a full day's lookback. Cross-checking against `seed_data.py`'s own comments confirmed it: the "recent events" bucket is explicitly described as "within the past 30 minutes," while the "older events" bucket (2–58 hours old) is explicitly commented as data that "should NOT appear in 'listening now' after fix." That confirmed the 24-hour constant itself was the bug, not the surrounding logic.
 
 **The root cause:**
 
-_TODO — Milestone 3._
+`RECENT_THRESHOLD = timedelta(hours=24)` made the "listening now" filter accept anything played in the last 24 hours. Since the feature is meant to show truly current activity (on the order of minutes), a full-day window let stale plays — including ones from "yesterday" in the literal sense — leak into the feed. The filter logic wasn't wrong; the constant defining "recent" was simply set two orders of magnitude too generous.
 
 **Fix and side-effect check:**
 
-_TODO — Milestone 3._
+Changed `RECENT_THRESHOLD` from `timedelta(hours=24)` to `timedelta(minutes=30)`, matching the window `seed_data.py` itself was designed around. Checked callers: `RECENT_THRESHOLD` and `get_friends_listening_now()` are used in exactly one place (`routes/feed.py`'s `/listening-now` route); `get_activity_feed()` is a separate, unfiltered function unaffected by this constant. No dedicated test file exists for feed logic, so verified both sides of the boundary manually against the live API: `kenji`'s feed (previously wrongly showing `nova`'s 2-hour-old play) now correctly returns empty, while `nova`'s feed (3 friends with genuinely recent, <30-min-old plays) still correctly returns all 3 — confirming the fix doesn't break the legitimate "actually listening now" case.
 
 ### Issue #4 — I got notified when a friend added my song to a playlist but not when they rated it
 
