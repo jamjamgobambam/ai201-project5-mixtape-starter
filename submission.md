@@ -26,6 +26,29 @@ Final verification:
 15 passed
 ```
 
+Screenshot evidence:
+
+The final terminal screenshot shows `git log --oneline` on the `bugfix/mixtape` branch with these commits:
+
+```text
+9bdbfcd docs: add final review and AI usage
+2bffbce fix: return all songs in playlist results
+e92475f fix: notify song sharers when friends rate songs
+30b451a fix: allow streaks to increment on Sundays
+```
+
+The same screenshot also shows the full test command:
+
+```powershell
+.venv\Scripts\python.exe -m pytest tests
+```
+
+and the final result:
+
+```text
+15 passed in 1.61s
+```
+
 ## Milestone 1: Codebase Map
 
 ### Setup
