@@ -2,7 +2,19 @@
 
 ## AI Usage
 
-_To be completed in Milestone 4, after all bug fixes are done. Will describe how AI tools were used to navigate the codebase, trace call chains, and debug each issue — including anywhere the AI's explanation was incomplete or pointed in the wrong direction._
+I used Claude (Claude Code) throughout this project as a navigation and investigation partner, not as a bug-finder. Specifically:
+
+**Codebase orientation (Milestone 1):** Before touching any issue, I had Claude read every file in `services/`, `routes/`, `app.py`, `models.py`, and `tests/`, and produce a 2-sentence summary per file plus a 1-sentence description of what each individual method/function was *supposed* to do — explicitly excluding any mention of bugs, since I wanted to build my own mental model and find the issues myself. I read all of this myself before starting Milestone 2. Claude also drafted the initial Codebase Map (file roles, the add-to-playlist data flow trace, and the "patterns noticed" section) in `submission.md`, which I reviewed against the actual code.
+
+**Reproducing bugs (Milestone 2):** For each issue, I asked Claude to help me trigger the bug through the *real* app (live routes), not just by reasoning about the code. This mattered most for Issue #1: the streak bug only manifests on a Saturday→Sunday transition, and the live app always uses the real system clock, so Claude used Flask's `test_client()` combined with monkey-patching `datetime.now()` in a throwaway script (no source files touched) to fire real HTTP-shaped requests while controlling the date. For Issues #2, #4, and #5, reproduction was simpler — real API calls against seeded users, comparing before/after state (notification counts, feed contents, playlist song counts).
+
+**Root cause tracing (Milestone 3):** For each bug, I had Claude walk the code path and compare it against the function's own docstring or a working sibling function, rather than guess. This surfaced two recurring patterns: a docstring/code mismatch (Issues #1 and #5, where the documented behavior directly contradicted a specific line of code — an extra `weekday() != 6` clause and a `[:-1]` slice, respectively) and a missing architectural step (Issue #4, where `rate_song()` was missing an entire notify-the-sharer block that its sibling `add_to_playlist()` had). I verified each proposed root cause myself by reading the flagged line before accepting it.
+
+**Where I pushed back / verified independently:** After the Issue #2 fix (changing `RECENT_THRESHOLD` from 24 hours to 30 minutes), I didn't accept the diff at face value — I asked whether it had actually been tested, since changing a keyword argument name/value alone doesn't prove functional correctness. Claude re-ran the live endpoint against fresh seed data and showed the actual before/after counts, which is when I accepted the fix. I also required explicit test-suite runs and live endpoint re-checks after every fix, not just a code diff, before considering any bug closed.
+
+**Issue #3 (search duplicates) — the case where AI's investigation didn't reach a clean answer:** Claude found a genuine bug in `search_songs()` (an unnecessary `outerjoin` to `song_tags` that fans out rows per tag), and proved the underlying row duplication exists using raw `sqlite3` and SQLAlchemy's Core `select()` API. But it could not get the bug to surface through the actual app code path (`search_songs()` itself, the live endpoint, or the project's own test suite) — it determined the installed SQLAlchemy version (2.0.51) appears to auto-deduplicate legacy `Query.all()` results regardless of relationship configuration, even for an unrelated bare model with no relationships at all. This was a case where the AI's investigation was thorough but inconclusive for a live reproduction; I made the final call myself to not count this bug toward the submission (documented as an investigated-but-unfixed entry) rather than have Claude force a workaround or fabricate a reproduction that didn't reflect real app behavior.
+
+**Commit hygiene:** I did all `git add`/`git commit` steps myself rather than having Claude run them, so I stayed in control of what got committed and when. Claude flagged that one commit (`5994e9c`, the Issue #1 fix) doesn't follow the required `fix:` conventional-commit prefix; I decided to leave it as-is rather than rewrite already-pushed history for a one-word formatting issue.
 
 ---
 
@@ -39,7 +51,7 @@ This is the "working" notification pattern referenced in the issue list (Issue #
 
 ## Root Cause Analysis
 
-_To be completed one entry per bug fixed (at least 3), following Milestone 3. Each entry will cover: how the bug was reproduced, how the root cause was found, the root cause itself, and the fix + side-effect check._
+4 of 5 issues fixed and documented below (#1, #2, #4, #5) — exceeding the 3-required minimum and one short of all 5. Issue #3 was investigated thoroughly but is not counted toward this submission; see its entry below for why.
 
 ### Issue #1 — My listening streak keeps resetting
 
@@ -150,4 +162,18 @@ Removed the `[:-1]` slice, returning `[song.to_dict() for song in songs]`. Check
 
 ## git log Screenshot
 
-_To be added in Milestone 4 — screenshot of `git log --oneline` on the `bugfix/mixtape` branch showing one commit per bug fix._
+Run `git log --oneline bugfix/mixtape` in a terminal and paste a screenshot of the output here (or attach it alongside this file per the course portal's submission format). Current output for reference:
+
+```
+4cae9ce docs: document Issue #3 investigation and final 4-of-5 scope decision
+52abc4c fix: return the last song in a playlist instead of dropping it
+a84f411 fix: send notification when a song is rated, matching the add-to-playlist pattern
+2cc3957 fix: tighten friends-listening-now threshold from 24 hours to 30 minutes
+5994e9c bug one found and fixed update_listening_streak() reset the streak instead of incrementing it
+7ec36f9 done with milestone 2
+9dacbba .
+2dfdeaa Add .gitignore file and update README with setup instructions
+7b64551 initial commit
+```
+
+`52abc4c`, `a84f411`, and `2cc3957` follow the `fix:` convention. `5994e9c` (Issue #1) doesn't use the exact prefix but is clearly a fix commit — left as-is per a deliberate decision (see AI Usage section).
