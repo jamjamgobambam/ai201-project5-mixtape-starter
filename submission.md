@@ -1,5 +1,31 @@
 # Mixtape Bug Hunt Submission
 
+## AI Usage
+
+I used AI tools mainly as a coding partner while navigating and debugging the codebase, not just to generate code. At the beginning, I used AI help to summarize the files I had already opened, especially the route files and service files, so I could build a clearer map of how requests move through the app.
+
+For debugging, I used AI assistance after I had already found the suspicious code path myself. For the streak bug, I traced the listen route into `streak_service.py` and then used AI help to reason through the `weekday()` condition. For the notification bug, I compared the rating flow with the playlist-add flow and used AI help to explain the structural difference between them. For the playlist bug, I had already found `songs[:-1]`, and AI helped confirm that this slice means "everything except the last item."
+
+I did not rely on the AI explanation by itself. I verified each diagnosis by reading the code, reproducing the bug, changing the smallest piece of logic, and rerunning the tests. One place where I had to be careful was Issue #3: the issue list said search could duplicate songs, but the local tests and API request returned one result, so I did not claim that bug as one of my three fixed issues.
+
+## Milestone 4: Final Review
+
+I checked the commit history on the `bugfix/mixtape` branch with `git log --oneline`. The three bug fixes are in separate commits and each uses a `fix:` message:
+
+```text
+2bffbce fix: return all songs in playlist results
+e92475f fix: notify song sharers when friends rate songs
+30b451a fix: allow streaks to increment on Sundays
+```
+
+I also reviewed the root cause analysis entries for the three fixed bugs. Each entry includes how I reproduced the bug, how I found the root cause, the root cause itself, the fix, and the side-effect checks I ran afterward.
+
+Final verification:
+
+```text
+15 passed
+```
+
 ## Milestone 1: Codebase Map
 
 ### Setup
@@ -257,10 +283,6 @@ The service was intentionally or accidentally slicing off the final item before 
 My fix and side-effect check:
 
 I changed the return line to serialize `songs` instead of `songs[:-1]`. This keeps all songs returned by the ordered query. I checked related behavior with the playlist tests: a playlist with 5 songs now returns all 5, the order is still `Track 1` through `Track 5`, and an empty playlist still returns an empty list.
-
-## AI Usage
-
-I used AI assistance as a coding partner while reading the code and writing the submission notes. I still traced each bug through the repo before fixing it: route to service, service to model or test, then the exact condition or missing step. The most useful AI help was summarizing the code paths I had already opened, comparing the rating notification flow to the playlist notification flow, and turning my reproduction notes into clearer root cause analysis entries. I verified the fixes by running the project tests instead of relying on the AI explanation alone.
 
 ## Conclusion
 
