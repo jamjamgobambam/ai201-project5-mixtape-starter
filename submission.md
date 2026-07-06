@@ -186,7 +186,9 @@ via `feed_service`.
 - **The root cause:** The `rate_song` function was completing the database upsert and commit without dispatching a notification. It was missing logic to verify if the rating user was different from the song's original sharer (`song.shared_by != user_id`) and trigger a `create_notification` call.
 - **Your fix and side-effect check:** Added the conditional check `if song.shared_by != user_id:` followed by a call to `create_notification` in `rate_song` inside [services/notification_service.py](file:///C:/Users/Erold Rayan/Downloads/AI201-Summer Program/Module 2/Week 5/ai201-project5-mixtape-starter/services/notification_service.py). We created a new test suite [tests/test_notifications.py](file:///C:/Users/Erold Rayan/Downloads/AI201-Summer Program/Module 2/Week 5/ai201-project5-mixtape-starter/tests/test_notifications.py) to assert that rating generates a notification for the song's sharer, and rating one's own song does not generate any notifications. All tests pass successfully.
 
+## Commit History
 
+`git log --oneline` on the `bugfix/mixtape` branch — one `fix:` commit per bug:
 
-
+![git log --oneline output showing one fix commit per bug on the bugfix/mixtape branch](git-log-bugfix-mixtape.png)
 
