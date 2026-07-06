@@ -18,3 +18,10 @@
 * **How I found the root cause:** I traced the failing test to `get_playlist_songs()` in `services/playlist_service.py`. I checked its return statement.
 * **The root cause:** The original return statement for that function was `return [song.to_dict() for song in songs[:-1]]`, meaning that because of the `[:-1]` slice, every song in the playlist except the last added song was being returned. 
 * **My fix and side-effect check:** I removed `[:-1]` from the return statement. After running `test_playlists.py` again, the test passed and Track 5 was included, confirming the function now returns all songs in the playlist without breaking the ordering.
+
+### Issue #1 - My listening streak keeps resetting
+
+* **How I reproduced it:** I ran the test file, `test_streaks.py`, and the test failure output was `assert 1 == 2 + where 1 = <User...>.listening_streak`. The test explicitly simulates a user listening on Saturday and then again on Sunday, expecting the streak to go up to 2, but instead it resets to 1.
+* **How I found the root cause:** I traced the failing test to `update_listening_streak()` in `services/streak_service.py`, specifically checking the `elif` statement controlling the daily increment.
+* **The root cause:** The `elif` statement included `and today.weekday() != 6`. In Python, Sunday is represented by `6`. When a user listens on Sunday, `6 != 6` evaluates to `False`. This causes the code to skip the `user.listening_streak += 1` increment entirely and fall to the `else` block, which hard-resets the streak to `1`.
+* **My fix and side-effect check:** I removed the `and today.weekday() != 6` condition from the `elif` statement. Re-running `test_streaks.py` resulted in all 5 tests passing. This confirmed the streak increments correctly across the Saturday-to-Sunday boundary without breaking existing streak logic.
