@@ -115,3 +115,10 @@ fix: correct Sunday boundary condition in streak reset logic
 ```
 
 See the project brief for full submission requirements.
+
+
+
+
+**Test Case**
+<img width="1280" height="800" alt="image" src="https://github.com/user-attachments/assets/17e1bf0d-ef23-49ac-b399-d4642281e4b5" />
+
