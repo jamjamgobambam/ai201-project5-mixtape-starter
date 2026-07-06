@@ -80,5 +80,24 @@ I traced `GET /playlists/<playlist_id>/songs` in `routes/playlists.py` to `playl
 
 I changed the return statement to serialize the full `songs` list. This preserves the query's existing ordering and only removes the accidental truncation. I ran `python -m pytest tests/test_playlists.py` to verify playlists now return all five songs in order and empty playlists still return an empty list.
 
+## Issue #4 — I got notified when a friend added my song to a playlist but not when they rated it
+
+### How you reproduced it
+
+I reproduced this by adding `tests/test_notifications.py::test_rating_song_notifies_original_sharer`. The test creates one user who shared a song and another user who rates it through `rate_song()`. Before the fix, querying `Notification` for the sharer raised `NoResultFound`, confirming that the rating was saved but no notification was created. I also added `test_rating_own_song_does_not_notify_self` to capture the expected self-notification guard.
+
+### How you found the root cause
+
+I traced `POST /songs/<song_id>/rate` in `routes/songs.py` to `notification_service.rate_song()`. I compared that function to the working playlist path: `routes/playlists.py` calls `notification_service.add_to_playlist()`, and `add_to_playlist()` both performs the playlist side effect and then calls `create_notification()` for the song's original sharer. The rating path lived in the same service but stopped after committing the `Rating` row.
+
+### The root cause
+
+The notification behavior was missing architecturally from the rating action. `rate_song()` validated the score, loaded the song and rater, inserted or updated the `Rating`, committed, and returned. Unlike `add_to_playlist()`, it never checked whether the actor was different from `song.shared_by` and never called `create_notification()`. The route was already calling the right service, but the service did not implement the expected notification side effect.
+
+### Your fix and side-effect check
+
+I added the same notification pattern used by playlist additions: after saving the rating, `rate_song()` now creates a `song_rated` notification for the original sharer unless the sharer rated their own song. I ran `python -m pytest tests/test_notifications.py tests/test_search.py tests/test_playlists.py tests/test_streaks.py` to verify the new notification behavior, the no-self-notification guard, and the existing service tests.
+
+
 
 
