@@ -1,5 +1,13 @@
 # Mixtape Codebase Map
 
+## AI Usage section
+
+I asked AI to explain the purpose of specific functions and files after I had located them in the repository, especially services like search_service, feed_service, and streak_service. This helped me quickly understand how data was flowing through the application and how different components interacted (for example, how a request moved from an API route into service-layer logic and then into database queries).
+
+I also used AI to help trace execution paths when a feature involved multiple layers of abstraction. In particular, it helped me reason about how a user action like listening to a song could propagate through models, database updates, and feed generation logic. 
+
+Not all AI suggestions were fully accurate. For example, early explanations sometimes assumed relationships were configured in a way that didn’t match the actual ORM setup in the project. In those cases, I verified behavior directly by printing values, checking database state, and reviewing the SQL queries being executed rather than relying on the AI interpretation.
+
 ## Project Overview
 
 Mixtape is a Flask-based social music app where users share songs, build collaborative playlists, track listening streaks, and receive notifications about their friends' activities. The app follows a **layered architecture** with routes handling HTTP requests, services containing business logic, and SQLAlchemy models managing data persistence.
@@ -762,3 +770,296 @@ Scenario 2: Friend listened 23 hours ago (yesterday 4 PM, check at 3 PM today)
   Expected: False (friend didn't listen today)
   ✓ FIXED: Correctly excluded (BUG was here)
 ```
+# Root Cause Analysis: Bug #3 — The Same Song Appears Twice in Search Results
+
+---
+
+## Issue #3: The same song keeps showing up twice in search
+
+**Affected service:** `search_service.py`
+
+### 1. Issue Number and Title
+**Bug #3:** The same song keeps showing up twice in search
+
+**Description:** When users search for songs, if a song has multiple tags (e.g., "indie" and "rock"), the same song appears multiple times in the search results — once for each tag. A song with 2 tags appears twice, a song with 3 tags appears three times.
+
+---
+
+### 2. How I Reproduced It
+
+**Steps to reproduce:**
+
+1. Create a song: "Midnight Run" by The Night Owls
+2. Assign it multiple tags: ["indie", "rock", "electronic"] (3 tags)
+3. Search for the song: `GET /songs/search?q=Midnight`
+4. Count the results
+
+**Expected behavior:** 1 result (the song once)
+
+**Actual behavior:** 3 results (same song 3 times, once per tag)
+
+**Data condition that triggers it:** The bug is **conditional on tag count**:
+- Song with 0 tags: appears 1 time (no duplicate) ✓
+- Song with 1 tag: appears 1 time (no duplicate) ✓
+- Song with 2 tags: appears 2 times (duplicate) ❌
+- Song with 3 tags: appears 3 times (duplicate) ❌
+
+**Verification test output:**
+```
+Song                | Tags  | Old Result | New Result
+--------------------|-------|------------|------------
+"Echo" by Artist A  | none  | ✓ 1 song   | ✓ 1 song
+"Wave" by Artist B  | [pop] | ✓ 1 song   | ✓ 1 song
+"Folk" by Artist C  | [a,b] | ✗ 2 songs  | ✓ 1 song (FIXED)
+"Synth" by Artist D | [a,b,c] | ✗ 3 songs | ✓ 1 song (FIXED)
+```
+
+---
+
+### 3. the Root Cause
+
+**Navigation path:**
+
+1. Started with the problem: Songs with multiple tags appear as duplicates in search results
+2. Examined the `search_songs()` function in `services/search_service.py` (lines 11–37)
+3. Identified the database query at line 25-34:
+   ```python
+   results = (
+       db.session.query(Song)
+       .outerjoin(song_tags, Song.id == song_tags.c.song_id)
+       .filter(...)
+       .all()
+   )
+   ```
+4. **Key observation:** The query joins the Song table with the `song_tags` association table
+5. Checked the models to understand the relationship:
+   - Found in `models.py` line 90: `tags = db.relationship("Tag", secondary=song_tags, lazy="subquery")`
+   - The Song model **already has a relationship to tags**
+   - The `lazy="subquery"` means tags are eager-loaded automatically
+6. **Aha moment:** The outerjoin is unnecessary AND it causes the bug
+7. **Mental trace of what happens at database level:**
+   - Without join: 1 Song row for "Midnight Run"
+   - With `OUTERJOIN song_tags`: 3 rows created
+     - Row 1: Song(id=123) + song_tags(123, indie_id)
+     - Row 2: Song(id=123) + song_tags(123, rock_id)
+     - Row 3: Song(id=123) + song_tags(123, electronic_id)
+   - SQLAlchemy creates 3 Song objects from these 3 rows
+   - All 3 get returned, even though they represent the same song
+8. **Confirmed the fix:** Checked that the Song model's `to_dict()` method (line 102) uses `self.tags`, which works via the ORM relationship
+9. **Conclusion:** The outerjoin was attempting to fetch tags manually, but the ORM relationship already handles this automatically with `lazy="subquery"`
+
+---
+
+### 4. The Root Cause
+
+**Precise explanation:**
+
+The `search_songs()` function performs an unnecessary `OUTERJOIN` with the `song_tags` association table, which causes the SQL query to return one row per tag per song instead of one row per song.
+
+**The problematic code (line 27):**
+```python
+.outerjoin(song_tags, Song.id == song_tags.c.song_id)
+```
+
+**How the bug manifests at the SQL level:**
+
+When you have a song with multiple tags, the `OUTERJOIN` creates multiple rows:
+
+```sql
+-- EXPECTED: One row per song
+SELECT Song.id, Song.title, ... FROM Song
+WHERE Song.title LIKE '%Midnight%'
+Result: 1 row
+
+-- ACTUAL: One row per song-tag combination
+SELECT Song.id, Song.title, ...
+FROM Song
+OUTERJOIN song_tags ON Song.id = song_tags.song_id
+WHERE Song.title LIKE '%Midnight%'
+Result: 3 rows (one per tag)
+```
+
+**SQLAlchemy's interpretation:**
+
+Each SQL row becomes a Python object. So from the 3 SQL rows, SQLAlchemy creates 3 Song objects:
+```python
+# 3 separate objects, all with the same Song.id
+song_obj_1 = Song(id=123, title="Midnight Run", ...)
+song_obj_2 = Song(id=123, title="Midnight Run", ...)  # Duplicate
+song_obj_3 = Song(id=123, title="Midnight Run", ...)  # Duplicate
+
+# All 3 get added to the results list
+return [song_obj_1, song_obj_2, song_obj_3]  # 3 items, all the same song
+```
+
+**Why the join was unnecessary:**
+
+The Song model already defines the tag relationship:
+```python
+# In models.py, line 90:
+tags = db.relationship("Tag", secondary=song_tags, lazy="subquery")
+
+# In to_dict() method, line 102:
+"tags": [tag.name for tag in self.tags],
+```
+
+The `lazy="subquery"` configuration means:
+- SQLAlchemy automatically fetches tags when the Song is loaded
+- The relationship is eager-loaded via a subquery (background query)
+- Calling `song.tags` after creation returns all tags for that song
+- No manual join needed
+
+**The architectural gap:**
+
+Someone manually added the outerjoin without realizing that:
+1. The ORM relationship already exists
+2. The relationship is already being used in `to_dict()`
+3. Adding a join to fetch the same data causes duplicates
+4. SQLAlchemy's identity map doesn't automatically deduplicate across different SQL rows
+
+---
+
+### 5. Fix and Side-Effect Check
+
+**The fix:**
+
+**Location:** `services/search_service.py`, lines 25–34 (removed the unnecessary outerjoin)
+
+**Before:**
+```python
+results = (
+    db.session.query(Song)
+    .outerjoin(song_tags, Song.id == song_tags.c.song_id)  # ← REMOVED
+    .filter(
+        db.or_(
+            Song.title.ilike(f"%{query}%"),
+            Song.artist.ilike(f"%{query}%"),
+        )
+    )
+    .all()
+)
+```
+
+**After:**
+```python
+results = (
+    db.session.query(Song)
+    .filter(
+        db.or_(
+            Song.title.ilike(f"%{query}%"),
+            Song.artist.ilike(f"%{query}%"),
+        )
+    )
+    .all()
+)
+```
+
+**Why this fixes the root cause:**
+
+1. **Removes the duplicate-producing join:** No more `OUTERJOIN song_tags`, so SQL returns one row per song, not per song-tag combination
+2. **Relies on the established ORM pattern:** The Song model's `tags` relationship with `lazy="subquery"` automatically loads tags when needed
+3. **Preserves tag data:** When `song.to_dict()` is called, it still accesses `self.tags`, which is already loaded by the relationship
+4. **Cleaner code:** No need to manually specify join conditions that already exist as a relationship
+
+**How it works:**
+
+```
+Query execution flow:
+1. db.session.query(Song).filter(...).all()
+   → Returns 1 Song object per matching song (no duplicates)
+
+2. When Song object is loaded:
+   → lazy="subquery" automatically runs a background query to fetch tags
+   → Song.tags is populated
+
+3. When song.to_dict() is called:
+   → Accesses self.tags (already loaded)
+   → Constructs: "tags": [tag.name for tag in self.tags]
+   → Tags are included in output
+
+Result: Correct deduplication, tags included, clean query
+```
+
+**Side-effect check—verified related functionality:**
+
+1. **`get_song()` function** (lines 39–53):
+   - Uses `db.session.get(Song, song_id)` (different approach than `query().filter()`)
+   - Unaffected by the change ✓
+   - Still returns tags via `song.to_dict()` ✓
+
+2. **Tag data inclusion** (models.py line 102):
+   - The `to_dict()` method accesses `self.tags`
+   - Before fix: Tags fetched by join, then accessed via relationship
+   - After fix: Tags fetched only via relationship (cleaner)
+   - Verified: Still works ✓
+
+3. **Search filtering** (lines 27–31):
+   - Title and artist filtering unchanged ✓
+   - Case-insensitive `.ilike()` still works ✓
+
+4. **Routes layer** (`routes/songs.py`):
+   - `GET /songs/search?q=...` endpoint calls `search_songs()`
+   - Now returns correct deduped results ✓
+
+5. **Songs with no tags**:
+   - Before: 1 song returned (correct, but for wrong reason — outer join handles it)
+   - After: 1 song returned (correct, relationship handles it)
+   - No regression ✓
+
+6. **Database efficiency**:
+   - Before: SELECT Song ... OUTERJOIN song_tags → multiple rows → create multiple objects
+   - After: SELECT Song → one row → one object → relationship loads tags separately
+   - Likely more efficient (avoids duplicate row creation) ✓
+
+7. **Performance considerations**:
+   - `lazy="subquery"` means tags are loaded with a subquery
+   - This is efficient because: one subquery for all songs at once, not N+1 queries
+   - Better than the join approach which creates duplicate rows ✓
+
+**Verification:**
+
+Ran `verify_bug3_fix.py` which confirmed:
+- Songs with 1 tag: No change (still returns 1)
+- Songs with 2 tags: FIXED (changed from 2 duplicates to 1 result)
+- Songs with 3 tags: FIXED (changed from 3 duplicates to 1 result)
+
+**Conclusion:** The fix is minimal (5 lines removed), targets the root cause precisely (unnecessary join), and leverages the existing ORM pattern (relationship with lazy loading). No side effects detected.
+
+---
+
+## Summary Table
+
+| Aspect | Details |
+|--------|---------|
+| **Bug Title** | The same song keeps showing up twice in search |
+| **Root Cause** | Unnecessary `OUTERJOIN song_tags` creates one SQL row per tag per song |
+| **Fix Applied** | Remove the outerjoin; use ORM relationship (already configured with `lazy="subquery"`) |
+| **Lines Changed** | 1 line removed in `services/search_service.py` (line 27) |
+| **Regressions Checked** | 7 related scenarios; all pass |
+| **Commit Message** | `fix: remove unnecessary song_tags join that caused search duplicates` |
+
+---
+
+## Technical Deep-Dive: Why This Pattern Exists
+
+**The correct pattern for many-to-many in SQLAlchemy:**
+
+```python
+# Define the relationship in the model
+class Song(db.Model):
+    tags = db.relationship("Tag", secondary=song_tags, lazy="subquery")
+
+# Use the relationship in queries
+songs = db.session.query(Song).filter(...).all()
+for song in songs:
+    print(song.tags)  # Already loaded by lazy="subquery"
+
+# Don't manually join the association table:
+#  WRONG:
+songs = db.session.query(Song).outerjoin(song_tags).filter(...).all()  # Duplicates!
+
+# CORRECT:
+songs = db.session.query(Song).filter(...).all()  # Uses relationship for tags
+```
+
+The bug was using the wrong pattern when the correct pattern was already in place.
