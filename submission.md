@@ -62,4 +62,23 @@ The streak rules say any consecutive calendar day should increment the streak, i
 
 I removed the Sunday exclusion so `days_since_last == 1` always increments the streak. This matches the documented rules in `streak_service.py`: same-day listens do not double count, exactly one day increments, and more than one skipped day resets. I ran `python -m pytest tests/test_streaks.py` to check the Sunday case plus the new-user, same-day, consecutive weekday, and skipped-day behavior.
 
+## Issue #5 — The last song in a playlist never shows up
+
+### How you reproduced it
+
+I reproduced this with the existing playlist tests. `tests/test_playlists.py::test_playlist_returns_all_songs` creates a playlist with five songs and expected five results, but `get_playlist_songs()` returned only four. `test_playlist_returns_songs_in_order` also showed that the returned titles stopped at `Track 4` and omitted `Track 5`.
+
+### How you found the root cause
+
+I traced `GET /playlists/<playlist_id>/songs` in `routes/playlists.py` to `playlist_service.get_playlist_songs()`. The query itself correctly joined `Song` to `playlist_entries`, filtered by playlist id, and ordered by `playlist_entries.position`. The specific problem was in the return statement after the query: it serialized `songs[:-1]` instead of `songs`.
+
+### The root cause
+
+`get_playlist_songs()` intentionally removed the final element from the ordered result list by slicing with `[:-1]`. Python list slicing excludes the stop index, so `songs[:-1]` means “all songs except the last one.” This made every non-empty playlist lose its final song even though the database query returned it correctly.
+
+### Your fix and side-effect check
+
+I changed the return statement to serialize the full `songs` list. This preserves the query's existing ordering and only removes the accidental truncation. I ran `python -m pytest tests/test_playlists.py` to verify playlists now return all five songs in order and empty playlists still return an empty list.
+
+
 
