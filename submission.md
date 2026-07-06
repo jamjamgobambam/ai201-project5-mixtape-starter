@@ -2,15 +2,23 @@
 
 ## AI Usage
 
-I used AI tools mainly as a coding partner while navigating and debugging the codebase, not just to generate code. At the beginning, I used AI help to summarize the files I had already opened, especially the route files and service files, so I could build a clearer map of how requests move through the app.
+I used AI tools as a coding partner while I was navigating and debugging the project. I did not use AI only to generate code. The most useful help was getting explanations of files I had already opened, summarizing route-to-service call chains, and turning my reproduction notes into clearer root cause analysis entries.
 
-For debugging, I used AI assistance after I had already found the suspicious code path myself. For the streak bug, I traced the listen route into `streak_service.py` and then used AI help to reason through the `weekday()` condition. For the notification bug, I compared the rating flow with the playlist-add flow and used AI help to explain the structural difference between them. For the playlist bug, I had already found `songs[:-1]`, and AI helped confirm that this slice means "everything except the last item."
+During codebase orientation, I used AI to help summarize the main files after I read them: `app.py`, `models.py`, the route files, the service files, the tests, and `seed_data.py`. That helped me understand the project pattern: routes mostly parse input and return JSON, while service files contain the real business logic.
 
-I did not rely on the AI explanation by itself. I verified each diagnosis by reading the code, reproducing the bug, changing the smallest piece of logic, and rerunning the tests. One place where I had to be careful was Issue #3: the issue list said search could duplicate songs, but the local tests and API request returned one result, so I did not claim that bug as one of my three fixed issues.
+During debugging, I used AI only after I had already traced the relevant path myself. For the streak bug, I traced the listen route into `streak_service.py` and then checked the `weekday()` condition. For the notification bug, I compared `rate_song` with `add_to_playlist` to see what the rating flow was missing. For the playlist bug, I found `songs[:-1]` and confirmed that it means "all items except the last one."
+
+I still verified each answer myself by reading the code, reproducing the bug, making the smallest fix, and running tests. One important example is Issue #3: the project brief said search could duplicate songs, but my local tests and API request returned one result, so I did not claim that as one of my three fixed bugs.
 
 ## Milestone 4: Final Review
 
-I checked the commit history on the `bugfix/mixtape` branch with `git log --oneline`. The three bug fixes are in separate commits and each uses a `fix:` message:
+I checked the commit history on the `bugfix/mixtape` branch with:
+
+```powershell
+git log --oneline
+```
+
+The bug fixes are in three separate commits, each with a `fix:` message:
 
 ```text
 2bffbce fix: return all songs in playlist results
@@ -18,13 +26,13 @@ e92475f fix: notify song sharers when friends rate songs
 30b451a fix: allow streaks to increment on Sundays
 ```
 
-I also reviewed the root cause analysis entries for the three fixed bugs. Each entry includes how I reproduced the bug, how I found the root cause, the root cause itself, the fix, and the side-effect checks I ran afterward.
+I also reviewed the root cause analysis entries for the three fixed bugs. Each entry includes:
 
-Final verification:
-
-```text
-15 passed
-```
+- how I reproduced the bug
+- how I found the root cause
+- the root cause
+- my fix
+- the side-effect check after the fix
 
 Screenshot evidence:
 
@@ -37,7 +45,7 @@ e92475f fix: notify song sharers when friends rate songs
 30b451a fix: allow streaks to increment on Sundays
 ```
 
-The same screenshot also shows the full test command:
+The same screenshot shows the full test command:
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests
@@ -47,6 +55,12 @@ and the final result:
 
 ```text
 15 passed in 1.61s
+```
+
+I reran the full test suite after the fixes, and the project passed:
+
+```text
+15 passed
 ```
 
 ## Milestone 1: Codebase Map
@@ -73,7 +87,7 @@ Before changing any code, I ran the tests:
 .venv\Scripts\python.exe -m pytest tests
 ```
 
-The starting result was 10 passing tests and 3 failing tests. The failures were useful because they confirmed the Sunday streak bug and the playlist missing-last-song bug.
+The starting result was 10 passing tests and 3 failing tests. The failures confirmed the Sunday streak bug and the playlist missing-last-song bug.
 
 ### How I read the codebase
 
@@ -114,6 +128,8 @@ The main pattern I noticed is that routes are thin and services do the real work
 
 `services/playlist_service.py` creates playlists and returns playlist metadata or ordered playlist songs.
 
+`tests/` contains focused tests for streaks, search, playlists, and the notification behavior I added for the rating fix.
+
 ### Data model
 
 A `User` has a username, email, listening streak, last listened time, friends, ratings, listening events, notifications, playlists, and shared songs.
@@ -132,9 +148,7 @@ A `Notification` belongs to a user and stores the notification type, message bod
 
 When a user rates a song, the request goes to `POST /songs/<song_id>/rate` in `routes/songs.py`. The route checks for `user_id` and `score`, then calls `notification_service.rate_song`.
 
-Inside `rate_song`, the service checks that the score is between 1 and 5. It loads the song and the user, checks whether the user has already rated that song, and either updates the old rating or creates a new one. Then it commits and returns the rating.
-
-The important thing I noticed is that this flow saves the rating, but it does not notify the person who originally shared the song. That is different from the playlist flow, where the original sharer does get notified.
+Inside `rate_song`, the service checks that the score is between 1 and 5. It loads the song and the user, checks whether the user has already rated that song, and either updates the old rating or creates a new one. After the fix, if the rater is not the song's original sharer, it also creates a `song_rated` notification for the original sharer.
 
 ### Feature flow: adding a song to a playlist
 
@@ -142,7 +156,7 @@ When a user adds a song to a playlist, the request goes to `POST /playlists/<pla
 
 That service loads the song, the user adding it, and the playlist. If the song is not already in the playlist, it adds it and commits. Then, if the person adding the song is not the original sharer, it creates a notification for the original sharer.
 
-This gave me the pattern that the rating feature probably should follow too.
+This gave me the pattern that the rating feature needed to follow too.
 
 ### Patterns I noticed
 
@@ -160,13 +174,13 @@ I read through all five issues before choosing which ones to reproduce first.
 
 | Issue | Title | Affected service | My status |
 | --- | --- | --- | --- |
-| #1 | My listening streak keeps resetting | `streak_service.py` | Reproduced and chosen |
+| #1 | My listening streak keeps resetting | `streak_service.py` | Reproduced and fixed |
 | #2 | Friends Listening Now shows people from yesterday | `feed_service.py` | Reproduced as a backup/extra |
 | #3 | The same song keeps showing up twice in search | `search_service.py` | Read, but not chosen |
-| #4 | I got notified when a friend added my song to a playlist but not when they rated it | `notification_service.py` | Reproduced and chosen |
-| #5 | The last song in a playlist never shows up | `playlist_service.py` | Reproduced and chosen |
+| #4 | I got notified when a friend added my song to a playlist but not when they rated it | `notification_service.py` | Reproduced and fixed |
+| #5 | The last song in a playlist never shows up | `playlist_service.py` | Reproduced and fixed |
 
-The three I chose first are #1, #4, and #5. I also reproduced #2, so that could be a good extra fix. I did not choose #3 because the search tests passed and my API search returned only one result, so I could not honestly say I reproduced that bug yet.
+The three I chose and fixed were #1, #4, and #5. I also reproduced #2, so that could be a good extra fix later. I did not choose #3 because the search tests passed and my API search returned only one result, so I could not honestly say I reproduced that bug.
 
 ## Milestone 2: Bug Reproduction Notes
 
@@ -182,7 +196,7 @@ The test listens on Saturday, June 15, 2024, then listens again on Sunday, June 
 
 What actually happened was that the streak stayed at 1.
 
-The likely cause is in `services/streak_service.py`. The code only increments the streak when `days_since_last == 1 and today.weekday() != 6`. Since Sunday has `weekday() == 6`, the code treats a valid Saturday-to-Sunday streak as if it should reset.
+The likely cause was in `services/streak_service.py`. The code only incremented the streak when `days_since_last == 1 and today.weekday() != 6`. Since Sunday has `weekday() == 6`, the code treated a valid Saturday-to-Sunday streak as if it should reset.
 
 ### Issue #4: rating a friend's song does not create a notification
 
@@ -206,9 +220,7 @@ The response still had `count: 0`.
 
 Expected behavior: Simone should get a notification because someone rated a song she shared.
 
-Actual behavior: the rating is saved, but no notification is created.
-
-The likely cause is that `notification_service.rate_song` commits the rating and returns it, but never calls `create_notification`. The playlist add feature already has this notification pattern, so the rating feature is missing a similar step.
+Actual behavior: the rating was saved, but no notification was created.
 
 ### Issue #5: the last song in a playlist is missing
 
@@ -221,7 +233,7 @@ tests/test_playlists.py::test_playlist_returns_all_songs
 tests/test_playlists.py::test_playlist_returns_songs_in_order
 ```
 
-The test playlist has 5 songs, but `get_playlist_songs` only returned 4. The titles stopped at `Track 4`, so `Track 5` was missing.
+The test playlist had 5 songs, but `get_playlist_songs` only returned 4. The titles stopped at `Track 4`, so `Track 5` was missing.
 
 I also checked it through the Flask app using seeded data:
 
@@ -229,11 +241,9 @@ I also checked it through the Flask app using seeded data:
 Invoke-RestMethod -Uri 'http://127.0.0.1:5000/playlists/d4a44990-6ea9-46e1-bd47-2cea2906a3f4/songs'
 ```
 
-The seeded `Late Night Vibes` playlist has 7 songs, but the response count was 6.
+The seeded `Late Night Vibes` playlist had 7 songs, but the response count was 6.
 
-The likely cause is in `services/playlist_service.py`. The query gets the songs in the right order, but the return line uses `songs[:-1]`, which removes the final song every time.
-
-## Extra Reproduction: Issue #2
+### Extra reproduction: Issue #2
 
 I also reproduced the friends listening now issue.
 
