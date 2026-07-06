@@ -247,22 +247,3 @@ Full suite: **21 passed** (`pytest tests/`) — including
 `tests/test_add_to_playlist.py`, added for the extra bug below.
 
 ---
-
-## Work Beyond the Assigned Five (not required)
-
-While building a browsable web UI over the database, I found and fixed a **sixth,
-pre-existing bug** that is *not* one of the five assigned issues:
-
-- **`add_to_playlist` crashed with `NOT NULL constraint failed:
-  playlist_entries.position`.** It added songs via the `Playlist.songs`
-  relationship, which does not populate the association table's NOT-NULL
-  `position` and `added_by` columns. Fixed by inserting the entry explicitly with
-  a computed next position (`max + 1`) and the adding user; covered by
-  `tests/test_add_to_playlist.py`. Commit: `fix: populate position and added_by
-  when adding a song to a playlist`.
-
-I also added a server-rendered web UI (`routes/web.py`, `templates/`) — a
-dashboard, per-user pages, playlist views, and search — layered over the same
-services without touching the JSON API. Commit: `feat: add browsable web UI over
-the database`. These are extra credit beyond the rubric; the five required fixes
-above stand on their own as the first five `fix:` commits on the branch.
