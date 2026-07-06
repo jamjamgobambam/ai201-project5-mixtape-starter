@@ -240,8 +240,30 @@ My fix and side-effect check:
 
 I added a notification step to `rate_song` after the rating is committed. If the rater is not the same user who shared the song, the service now creates a `song_rated` notification for the original sharer. I also added tests in `tests/test_notifications.py` for both sides of the behavior: a friend rating someone else's song creates one notification, and rating your own song does not notify yourself.
 
+### Issue #5: The last song in a playlist never shows up
+
+How I reproduced it:
+
+I reproduced this with the playlist tests before editing code. The failing tests were `tests/test_playlists.py::test_playlist_returns_all_songs` and `tests/test_playlists.py::test_playlist_returns_songs_in_order`. The test playlist had 5 songs, but the service returned only 4, ending at `Track 4` instead of `Track 5`. I also reproduced it through the Flask app with seeded data: the `Late Night Vibes` playlist had 7 entries, but the endpoint returned `count: 6`.
+
+How I found the root cause:
+
+I traced the playlist endpoint from `routes/playlists.py`. `GET /playlists/<playlist_id>/songs` calls `playlist_service.get_playlist_songs`, so I inspected that function. The query joined `Song` to `playlist_entries`, filtered by playlist ID, and ordered by `position`, which all matched the expected behavior. The specific problem was the final return line: it used `songs[:-1]`. Since the query result itself was already correct, that slice was the exact place where the last song was being removed.
+
+The root cause:
+
+The service was intentionally or accidentally slicing off the final item before serializing the songs. In Python, `songs[:-1]` means "all items except the last one." So every non-empty playlist lost its final song, even though the database query found it.
+
+My fix and side-effect check:
+
+I changed the return line to serialize `songs` instead of `songs[:-1]`. This keeps all songs returned by the ordered query. I checked related behavior with the playlist tests: a playlist with 5 songs now returns all 5, the order is still `Track 1` through `Track 5`, and an empty playlist still returns an empty list.
+
+## AI Usage
+
+I used AI assistance as a coding partner while reading the code and writing the submission notes. I still traced each bug through the repo before fixing it: route to service, service to model or test, then the exact condition or missing step. The most useful AI help was summarizing the code paths I had already opened, comparing the rating notification flow to the playlist notification flow, and turning my reproduction notes into clearer root cause analysis entries. I verified the fixes by running the project tests instead of relying on the AI explanation alone.
+
 ## Conclusion
 
 The Mixtape app is organized in a clear way: Flask routes handle requests, service files contain the actual logic, and SQLAlchemy models define the data. Once I understood that structure, the bugs were easier to trace because each issue pointed to one service file.
 
-The three bugs I chose are all service-layer problems. The streak bug comes from a bad Sunday condition, the notification bug comes from a missing notification call after rating, and the playlist bug comes from slicing off the last song before returning results. I reproduced these before making any fixes, so the next step is to change the service code and rerun the tests to confirm the fixes.
+The three bugs I chose were all service-layer problems. The streak bug came from a bad Sunday condition, the notification bug came from a missing notification call after rating, and the playlist bug came from slicing off the last song before returning results. I fixed each one with a small targeted change, documented the root cause, and reran the tests afterward. The final full test run passed with 15 tests passing.
