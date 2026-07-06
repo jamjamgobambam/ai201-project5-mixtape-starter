@@ -134,15 +134,15 @@ Confirmed reproducible on the first try — not conditional like Issues #1/#3; e
 
 **How I found the root cause:**
 
-_TODO — Milestone 3._
+Read `get_playlist_songs()` in `services/playlist_service.py` top to bottom. The query (joining `Song` to `playlist_entries`, filtering by playlist, ordering by `position`) correctly builds the full, ordered list — nothing wrong there. The `return` statement right below it is `[song.to_dict() for song in songs[:-1]]`. The function's own docstring includes a `Note:` explicitly stating "This function returns all songs in the playlist" — directly contradicted by the `[:-1]` slice on the very next meaningful line. That contradiction between the documented behavior and the actual return statement was the confirming moment, same pattern as Issue #1's docstring-vs-code mismatch.
 
 **The root cause:**
 
-_TODO — Milestone 3._
+The query fetches every song in the playlist, correctly ordered by position. But the list comprehension slices the result with `songs[:-1]` before returning, which drops the last element of any non-empty list — i.e., the song at the highest position, regardless of how many songs are in the playlist. `test_empty_playlist_returns_empty_list` didn't catch this because `[][:-1] == []`, so the bug is invisible for empty playlists and only manifests once a playlist actually has songs.
 
 **Fix and side-effect check:**
 
-_TODO — Milestone 3._
+Removed the `[:-1]` slice, returning `[song.to_dict() for song in songs]`. Checked callers: `get_playlist_songs()` is called from `routes/playlists.py`'s `GET /playlists/<id>/songs` route (the real usage) and is also imported — but never actually called — inside `notification_service.add_to_playlist()` (a pre-existing dead import, unrelated to this fix). Ran the full test suite: all 13 tests now pass, including the two in `test_playlists.py` that were previously failing (`test_playlist_returns_all_songs`, `test_playlist_returns_songs_in_order`); `test_empty_playlist_returns_empty_list` still passes, confirming the empty-playlist boundary still works correctly. Re-ran the original reproduction against the live API: "Late Night Vibes" now correctly returns all 7 songs, including the previously-missing "Free Throws" at position 7.
 
 ---
 
