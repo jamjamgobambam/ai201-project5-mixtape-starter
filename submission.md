@@ -14,7 +14,7 @@ I used Claude (Claude Code) throughout this project as a navigation and investig
 
 **Issue #3 (search duplicates) — the case where AI's investigation didn't reach a clean answer:** Claude found a genuine bug in `search_songs()` (an unnecessary `outerjoin` to `song_tags` that fans out rows per tag), and proved the underlying row duplication exists using raw `sqlite3` and SQLAlchemy's Core `select()` API. But it could not get the bug to surface through the actual app code path (`search_songs()` itself, the live endpoint, or the project's own test suite) — it determined the installed SQLAlchemy version (2.0.51) appears to auto-deduplicate legacy `Query.all()` results regardless of relationship configuration, even for an unrelated bare model with no relationships at all. This was a case where the AI's investigation was thorough but inconclusive for a live reproduction; I made the final call myself to not count this bug toward the submission (documented as an investigated-but-unfixed entry) rather than have Claude force a workaround or fabricate a reproduction that didn't reflect real app behavior.
 
-**Commit hygiene:** I did all `git add`/`git commit` steps myself rather than having Claude run them, so I stayed in control of what got committed and when. Claude flagged that one commit (`5994e9c`, the Issue #1 fix) doesn't follow the required `fix:` conventional-commit prefix; I decided to leave it as-is rather than rewrite already-pushed history for a one-word formatting issue.
+**Commit hygiene:** I did all `git add`/`git commit` steps myself rather than having Claude run them, so I stayed in control of what got committed and when. Claude flagged that my first commit (the Issue #1 fix) didn't follow the required `fix:` conventional-commit prefix. I initially decided to leave it as-is, then changed my mind and had it reworded via a non-interactive rebase (cherry-pick replay, since the interactive `rebase -i` editor isn't available in this environment) followed by a force-push to my fork, since that commit was already pushed. A backup branch was created first, and the rewritten tree was diffed against the original to confirm the content was byte-for-byte identical — only that one commit message actually changed.
 
 ---
 
@@ -165,15 +165,16 @@ Removed the `[:-1]` slice, returning `[song.to_dict() for song in songs]`. Check
 Run `git log --oneline bugfix/mixtape` in a terminal and paste a screenshot of the output here (or attach it alongside this file per the course portal's submission format). Current output for reference:
 
 ```
-4cae9ce docs: document Issue #3 investigation and final 4-of-5 scope decision
-52abc4c fix: return the last song in a playlist instead of dropping it
-a84f411 fix: send notification when a song is rated, matching the add-to-playlist pattern
-2cc3957 fix: tighten friends-listening-now threshold from 24 hours to 30 minutes
-5994e9c bug one found and fixed update_listening_streak() reset the streak instead of incrementing it
+a085664 docs: write AI usage section and finalize submission for Milestone 4
+6fa8562 docs: document Issue #3 investigation and final 4-of-5 scope decision
+e4db7b1 fix: return the last song in a playlist instead of dropping it
+d418501 fix: send notification when a song is rated, matching the add-to-playlist pattern
+8113dc3 fix: tighten friends-listening-now threshold from 24 hours to 30 minutes
+0a6fc19 fix: remove erroneous Sunday exception in streak increment logic
 7ec36f9 done with milestone 2
 9dacbba .
 2dfdeaa Add .gitignore file and update README with setup instructions
 7b64551 initial commit
 ```
 
-`52abc4c`, `a84f411`, and `2cc3957` follow the `fix:` convention. `5994e9c` (Issue #1) doesn't use the exact prefix but is clearly a fix commit — left as-is per a deliberate decision (see AI Usage section).
+All 4 bug-fix commits (`0a6fc19`, `8113dc3`, `d418501`, `e4db7b1`) follow the `fix:` convention.
