@@ -10,7 +10,7 @@ During debugging, I used AI only after I had already traced the relevant path my
 
 I still verified each answer myself by reading the code, reproducing the bug, making the smallest fix, and running tests. One important example is Issue #3: the project brief said search could duplicate songs, but my local tests and API request returned one result, so I did not claim that as one of my three fixed bugs.
 
-## Milestone 4: Final Review
+## Final Review
 
 I checked the commit history on the `bugfix/mixtape` branch with:
 
@@ -63,15 +63,11 @@ I reran the full test suite after the fixes, and the project passed:
 15 passed
 ```
 
-## Milestone 1: Codebase Map
+## Codebase Map
 
 ### Setup
 
-I worked on the `bugfix/mixtape` branch. The repo already had a `.venv`, so I used that instead of creating a new one. I checked the dependencies with:
-
-```powershell
-.venv\Scripts\python.exe -m pip install --disable-pip-version-check -r requirements.txt
-```
+I worked on the `bugfix/mixtape` branch. The repo already had a `.venv`, so I used that instead of creating a new one. 
 
 Everything was already installed. Then I seeded the database:
 
@@ -182,7 +178,7 @@ I read through all five issues before choosing which ones to reproduce first.
 
 The three I chose and fixed were #1, #4, and #5. I also reproduced #2, so that could be a good extra fix later. I did not choose #3 because the search tests passed and my API search returned only one result, so I could not honestly say I reproduced that bug.
 
-## Milestone 2: Bug Reproduction Notes
+## Bug Reproduction Notes
 
 ### Issue #1: listening streak resets on Sunday
 
@@ -261,7 +257,7 @@ RECENT_THRESHOLD = timedelta(hours=24)
 
 That means anything from the last 24 hours can appear in listening now, which is too broad for this feature.
 
-## Milestone 3: Root Cause Analysis and Fixes
+## Root Cause Analysis and Fixes
 
 ### Issue #1: My listening streak keeps resetting
 
