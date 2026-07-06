@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}{{ user.username }} — Mixtape{% endblock %}
+{% block body %}
+  <a class="back" href="{{ url_for('web.dashboard') }}">← Home</a>
+  <h1>{{ user.username }}</h1>
+  <div class="row" style="margin-bottom:6px;">
+    <span class="badge streak">🔥 {{ streak }} day streak</span>
+    <span class="muted">Last listened:
+      {% if user.last_listened_at %}{{ user.last_listened_at.strftime("%b %d, %Y %H:%M UTC") }}{% else %}never{% endif %}
+    </span>
+  </div>
+
+  <div class="split">
+    <div>
+      <h2>Record a listen</h2>
+      <div class="card">
+        <form class="inline" action="{{ url_for('web.listen_action', user_id=user.id) }}" method="post">
+          <select name="song_id" required>
+            {% for s in all_songs %}<option value="{{ s.id }}">{{ s.title }} — {{ s.artist }}</option>{% endfor %}
+          </select>
+          <button type="submit">▶ Listen</button>
+        </form>
+        <p class="muted" style="margin:10px 0 0; font-size:13px;">Listening on consecutive days keeps your streak alive.</p>
+      </div>
+
+      <h2>Friends listening now</h2>
+      <ul class="list">
+        {% for item in listening_now %}
+          <li>
+            <div class="row">
+              <strong>{{ item.friend.username }}</strong>
+              <span class="muted">is playing</span>
+              <strong>{{ item.song.title }}</strong>
+              <span class="muted">— {{ item.song.artist }}</span>
+            </div>
+          </li>
+        {% else %}
+          <li class="empty">No friends have listened in the last 30 minutes.</li>
+        {% endfor %}
+      </ul>
+
+      <h2>Recent activity</h2>
+      <ul class="list">
+        {% for item in activity %}
+          <li>
+            <span class="muted">{{ item.friend.username }} listened to</span>
+            <strong>{{ item.song.title }}</strong>
+          </li>
+        {% else %}
+          <li class="empty">No recent activity from friends.</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div>
+      <h2>Notifications</h2>
+      <ul class="list">
+        {% for n in notifications %}
+          <li>
+            <div>{{ n.body }}</div>
+            <div class="muted" style="font-size:12px; margin-top:3px;">
+              {{ n.type }}{% if not n.read %} · <span style="color:var(--accent2);">unread</span>{% endif %}
+            </div>
+          </li>
+        {% else %}
+          <li class="empty">No notifications yet.</li>
+        {% endfor %}
+      </ul>
+
+      <h2>Friends</h2>
+      <div class="row">
+        {% for f in friends %}
+          <a class="chip" href="{{ url_for('web.user_page', user_id=f.id) }}">{{ f.username }}</a>
+        {% else %}
+          <span class="empty">No friends yet.</span>
+        {% endfor %}
+      </div>
+
+      <h2>Playlists</h2>
+      <ul class="list">
+        {% for p in playlists %}
+          <li><a href="{{ url_for('web.playlist_page', playlist_id=p.id) }}">{{ p.name }}</a></li>
+        {% else %}
+          <li class="empty">No playlists created.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+{% endblock %}

@@ -37,6 +37,10 @@ def create_app(config=None):
     app.register_blueprint(users_bp, url_prefix="/users")
     app.register_blueprint(feed_bp, url_prefix="/feed")
 
+    # Browsable web UI (server-rendered pages over the same services).
+    from routes.web import web_bp
+    app.register_blueprint(web_bp)
+
     with app.app_context():
         db.create_all()
 

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Mixtape{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #0f1020; --panel: #1a1b2e; --panel2: #232544;
+      --text: #ececf5; --muted: #a0a2c0; --line: #2f3157;
+      --accent: #a06bff; --accent2: #ff6bc1; --good: #4ade80; --bad: #ff7a7a;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 0 20px 64px; }
+    header.top {
+      background: linear-gradient(120deg, #2a1a4a, #3a1f5c 40%, #4a1f4a);
+      border-bottom: 1px solid var(--line);
+    }
+    header.top .wrap { padding: 20px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+    .brand { font-size: 22px; font-weight: 800; letter-spacing: -.5px; color: #fff; }
+    .brand a { color: #fff; }
+    .brand .dot { color: var(--accent2); }
+    nav.top-nav { display: flex; gap: 18px; margin-left: auto; }
+    nav.top-nav a { color: var(--muted); font-weight: 600; }
+    nav.top-nav a:hover { color: #fff; text-decoration: none; }
+    h1 { font-size: 26px; margin: 26px 0 4px; letter-spacing: -.5px; }
+    h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 1px;
+         color: var(--muted); margin: 34px 0 14px; font-weight: 700; }
+    .sub { color: var(--muted); margin-top: 0; }
+    .grid { display: grid; gap: 14px; }
+    .grid.cards { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+    .card {
+      background: var(--panel); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 16px; transition: border-color .15s, transform .15s;
+    }
+    a.card:hover { border-color: var(--accent); transform: translateY(-2px); text-decoration: none; }
+    .card .name { font-weight: 700; font-size: 16px; color: var(--text); }
+    .card .meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px; font-weight: 700;
+      background: var(--panel2); border: 1px solid var(--line);
+      padding: 3px 10px; border-radius: 999px; font-size: 13px;
+    }
+    .badge.streak { color: #ffb15c; }
+    .chip {
+      display: inline-block; background: var(--panel2); color: var(--muted);
+      border: 1px solid var(--line); padding: 1px 9px; border-radius: 999px;
+      font-size: 12px; margin: 2px 3px 0 0;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+    tr:last-child td { border-bottom: none; }
+    .list { list-style: none; padding: 0; margin: 0; }
+    .list li { padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .list li:last-child { border-bottom: none; }
+    .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .muted { color: var(--muted); }
+    .num { color: var(--accent); font-weight: 700; width: 28px; display: inline-block; }
+    form.inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    input[type=text], select {
+      background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+      border-radius: 10px; padding: 9px 12px; font: inherit; outline: none;
+    }
+    input[type=text]:focus, select:focus { border-color: var(--accent); }
+    input.search { flex: 1; min-width: 220px; }
+    button {
+      background: linear-gradient(120deg, var(--accent), var(--accent2));
+      color: #fff; border: 0; border-radius: 10px; padding: 9px 16px;
+      font: inherit; font-weight: 700; cursor: pointer;
+    }
+    button.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+    button:hover { filter: brightness(1.08); }
+    .flash { padding: 12px 16px; border-radius: 12px; margin: 16px 0; font-weight: 600; }
+    .flash.success { background: rgba(74,222,128,.12); border: 1px solid var(--good); color: var(--good); }
+    .flash.error { background: rgba(255,122,122,.12); border: 1px solid var(--bad); color: var(--bad); }
+    .empty { color: var(--muted); font-style: italic; padding: 8px 0; }
+    .back { font-size: 13px; }
+    .split { display: grid; grid-template-columns: 1.4fr 1fr; gap: 24px; }
+    @media (max-width: 720px) { .split { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <div class="brand"><a href="{{ url_for('web.dashboard') }}">🎵 Mixtape<span class="dot">.</span></a></div>
+      <nav class="top-nav">
+        <a href="{{ url_for('web.dashboard') }}">Home</a>
+        <a href="{{ url_for('web.search_page') }}">Search</a>
+      </nav>
+    </div>
+  </header>
+  <div class="wrap">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+    {% block body %}{% endblock %}
+  </div>
+</body>
+</html>

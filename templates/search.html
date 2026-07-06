@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Search — Mixtape{% endblock %}
+{% block body %}
+  <a class="back" href="{{ url_for('web.dashboard') }}">← Home</a>
+  <h1>Search songs</h1>
+
+  <form class="inline" action="{{ url_for('web.search_page') }}" method="get" style="margin-bottom:8px;">
+    <input class="search" type="text" name="q" value="{{ query }}" placeholder="Search by title or artist…" autofocus>
+    <button type="submit">Search</button>
+  </form>
+
+  {% if query %}
+    <p class="sub">{{ results|length }} result{{ '' if results|length == 1 else 's' }} for “{{ query }}”</p>
+    <div class="grid">
+      {% for s in results %}
+        <div class="card">
+          <div class="row" style="justify-content:space-between;">
+            <div>
+              <div class="name">{{ s.title }}</div>
+              <div class="meta">{{ s.artist }}{% if s.genre %} · {{ s.genre }}{% endif %}</div>
+              <div style="margin-top:8px;">
+                {% for t in s.tags %}<span class="chip">{{ t }}</span>{% endfor %}
+              </div>
+            </div>
+          </div>
+          <form class="inline" action="{{ url_for('web.rate_action', song_id=s.id) }}" method="post" style="margin-top:14px;">
+            <input type="hidden" name="q" value="{{ query }}">
+            <span class="muted">Rate as</span>
+            <select name="user_id" required>
+              {% for u in users %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}
+            </select>
+            <select name="score" required>
+              {% for n in [5,4,3,2,1] %}<option value="{{ n }}">{{ n }} ★</option>{% endfor %}
+            </select>
+            <button class="ghost" type="submit">Rate</button>
+          </form>
+        </div>
+      {% else %}
+        <p class="empty">No songs match “{{ query }}”.</p>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">Type a title or artist above to search.</p>
+  {% endif %}
+{% endblock %}
