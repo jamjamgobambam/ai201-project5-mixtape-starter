@@ -27,6 +27,7 @@ def get_friends_listening_now(user_id: str) -> list[dict]:
         raise ValueError(f"User {user_id} not found")
 
     # Calculate the start of today (midnight UTC)
+    #added for fix
     now = datetime.now(timezone.utc)
     today_start = datetime.combine(now.date(), datetime.min.time()).replace(tzinfo=timezone.utc)
     
