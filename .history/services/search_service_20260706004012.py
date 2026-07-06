@@ -31,7 +31,6 @@ def search_songs(query: str) -> list[dict]:
                 Song.artist.ilike(f"%{query}%"),
             )
         )
-        .distinct()
         .all()
     )
 
