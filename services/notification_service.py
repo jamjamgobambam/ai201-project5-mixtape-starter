@@ -6,11 +6,13 @@ Notifications are generated when friends interact with a user's shared songs.
 """
 
 from app import db
-from models import Notification, Song, User, Rating
+from models import Notification, Rating, Song, User
 from sqlalchemy import desc
 
 
-def create_notification(user_id: str, notification_type: str, body: str) -> Notification:
+def create_notification(
+    user_id: str, notification_type: str, body: str
+) -> Notification:
     """
     Create a notification for a user.
 
@@ -42,6 +44,7 @@ def add_to_playlist(playlist_id: str, song_id: str, added_by_user_id: str) -> No
         added_by_user_id: The ID of the user who added the song.
     """
     from models import Playlist
+
     from services.playlist_service import get_playlist_songs
 
     song = db.session.get(Song, song_id)
@@ -94,9 +97,9 @@ def rate_song(user_id: str, song_id: str, score: int) -> Rating:
         raise ValueError(f"User {user_id} not found")
 
     # Check if the user has already rated this song
-    existing = db.session.query(Rating).filter_by(
-        user_id=user_id, song_id=song_id
-    ).first()
+    existing = (
+        db.session.query(Rating).filter_by(user_id=user_id, song_id=song_id).first()
+    )
 
     if existing:
         existing.score = score
@@ -106,6 +109,14 @@ def rate_song(user_id: str, song_id: str, score: int) -> Rating:
         db.session.add(rating)
 
     db.session.commit()
+
+    # Notify the person who originally shared the song (if it wasn't them who rated it)
+    if song.shared_by != user_id:
+        create_notification(
+            user_id=song.shared_by,
+            notification_type="song_rated",
+            body=f"{rater.username} rated your song '{song.title}' {score}/5.",
+        )
 
     return rating
 
