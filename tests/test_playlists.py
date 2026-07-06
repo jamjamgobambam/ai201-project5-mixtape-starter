@@ -84,3 +84,39 @@ def test_empty_playlist_returns_empty_list(app):
 
         songs = get_playlist_songs(playlist.id)
         assert songs == []
+
+
+def test_get_playlist_songs_invalid_id_raises(app):
+    """get_playlist_songs should raise ValueError for an unknown playlist ID."""
+    with app.app_context():
+        with pytest.raises(ValueError, match="not found"):
+            get_playlist_songs("00000000-0000-0000-0000-000000000000")
+
+
+def test_create_playlist_returns_playlist(app):
+    """create_playlist should persist and return a Playlist with correct fields."""
+    with app.app_context():
+        user = User(username="creator", email="creator@example.com")
+        db.session.add(user)
+        db.session.commit()
+
+        playlist = create_playlist(
+            name="Chill Vibes",
+            created_by_user_id=user.id,
+            is_collaborative=False,
+        )
+
+        assert playlist.id is not None
+        assert playlist.name == "Chill Vibes"
+        assert playlist.created_by == user.id
+        assert playlist.is_collaborative is False
+
+
+def test_create_playlist_invalid_user_raises(app):
+    """create_playlist should raise ValueError if the user does not exist."""
+    with app.app_context():
+        with pytest.raises(ValueError, match="not found"):
+            create_playlist(
+                name="Ghost Playlist",
+                created_by_user_id="00000000-0000-0000-0000-000000000000",
+            )

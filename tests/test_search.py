@@ -7,7 +7,7 @@ Tests for song search logic.
 import pytest
 from app import create_app, db
 from models import User, Song, Tag, song_tags
-from services.search_service import search_songs
+from services.search_service import search_songs, get_song
 
 
 @pytest.fixture
@@ -117,3 +117,31 @@ def test_search_returns_empty_for_no_match(app, seed_songs):
     with app.app_context():
         results = search_songs("zzz_no_match_zzz")
         assert results == []
+
+
+# def test_search_is_case_insensitive(app, seed_songs):
+#     """Search should match regardless of query casing."""
+#     with app.app_context():
+#         results_lower = search_songs("borough")
+#         results_upper = search_songs("BOROUGH")
+#         titles_lower = [r["title"] for r in results_lower]
+#         titles_upper = [r["title"] for r in results_upper]
+#         assert "Crown Heights Anthem" in titles_lower
+#         assert "Crown Heights Anthem" in titles_upper
+
+
+def test_get_song_returns_song_dict(app, seed_songs):
+    """get_song should return a dict with the correct fields for a valid ID."""
+    with app.app_context():
+        song_id = seed_songs["song_no_tags"].id
+        result = get_song(song_id)
+        assert result["id"] == song_id
+        assert result["title"] == "Midnight Drive"
+        assert result["artist"] == "The Wanderers"
+
+
+def test_get_song_invalid_id_raises(app, seed_songs):
+    """get_song should raise ValueError for an unknown song ID."""
+    with app.app_context():
+        with pytest.raises(ValueError, match="not found"):
+            get_song("00000000-0000-0000-0000-000000000000")

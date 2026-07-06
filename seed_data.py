@@ -108,31 +108,42 @@ def seed():
                 )
 
         # --- Listening Events ---
-        # Recent events (within the past 30 minutes) — should appear in "listening now"
-        recent_songs = [s for s, _ in all_songs[:3]]
-        for i, song in enumerate(recent_songs):
-            event = ListeningEvent(
-                user_id=users[i + 1].id,
-                song_id=song.id,
-                listened_at=now - timedelta(minutes=10 + i * 5),
-            )
-            db.session.add(event)
+        # Recent events (within the last 30 minutes) — should appear in "listening now".
+        db.session.add(ListeningEvent(
+            user_id=users[1].id,
+            song_id=all_songs[0][0].id,
+            listened_at=now - timedelta(minutes=10),
+        ))
+        db.session.add(ListeningEvent(
+            user_id=users[3].id,
+            song_id=all_songs[2][0].id,
+            listened_at=now - timedelta(minutes=20),
+        ))
 
-        # Older events (1–14 days ago) — should NOT appear in "listening now" after fix
+        # Stale event (20 hours ago) — outside the 1-hour "listening now" window.
+        # BUG DEMONSTRATION: with the original 24-hour RECENT_THRESHOLD this
+        # event incorrectly appears in the feed. After the fix (1 hour) it is excluded.
+        db.session.add(ListeningEvent(
+            user_id=users[2].id,
+            song_id=all_songs[1][0].id,
+            listened_at=now - timedelta(hours=20),
+        ))
+
+        # Older events (2+ days ago) — should never appear in "listening now"
         for i in range(8):
             song = all_songs[i % len(all_songs)][0]
             user = users[i % len(users)]
-            event = ListeningEvent(
+            db.session.add(ListeningEvent(
                 user_id=user.id,
                 song_id=song.id,
-                listened_at=now - timedelta(hours=2 + i * 8),
-            )
-            db.session.add(event)
+                listened_at=now - timedelta(days=2 + i),
+            ))
 
         # Set last_listened_at for streak users
-        users[0].last_listened_at = now - timedelta(hours=1)   # nova: listened today
-        users[1].last_listened_at = now - timedelta(days=1)    # darius: listened yesterday
-        users[3].last_listened_at = now - timedelta(hours=3)   # kenji: listened today
+        users[0].last_listened_at = now - timedelta(hours=1)
+        users[1].last_listened_at = now - timedelta(minutes=10)
+        users[2].last_listened_at = now - timedelta(hours=20)
+        users[3].last_listened_at = now - timedelta(minutes=20)
 
         # --- Playlists ---
         playlists = [
