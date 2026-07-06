@@ -66,15 +66,17 @@ Python's `datetime.weekday()` returns `6` for Sunday. The condition `days_since_
 
 Removed the `and today.weekday() != 6` clause, leaving `elif days_since_last == 1:` — matching the documented streak rules exactly, with no day-of-week special case. Checked for side effects: `update_listening_streak()` has exactly one caller in the whole codebase (`record_listening_event()` in the same file, called from `routes/songs.py`'s `POST /songs/<id>/listen` route) — nothing else depends on it. Ran the full test suite: all 5 tests in `test_streaks.py` pass, including `test_streak_increments_on_sunday` (previously latent/unasserted against the bug). Also re-ran the original reproduction script against the live API — streak now correctly goes `1 → 2` across the Saturday→Sunday boundary.
 
-### Issue #3 — The same song keeps showing up twice in search (attempted, not yet reproduced)
+### Issue #3 — The same song keeps showing up twice in search (investigated, not fixed — not counted toward this submission)
 
 **How I attempted to reproduce it:**
 
 `search_songs()` does an unnecessary `outerjoin` to `song_tags` (a many-to-many association table) but never actually filters/selects on tag data — only `title`/`artist`. Confirmed at the raw `sqlite3` level (bypassing the ORM) that this join genuinely fans out: for a 3-tag song ("Crown Heights Anthem"), it produces 3 duplicate rows.
 
-However, through the actual app code path — `db.session.query(Song).outerjoin(...).all()`, which is exactly what `search_songs()` runs — the duplication does not currently surface. Verified this four ways, all deduplicated to a single result: calling `search_songs()` directly, hitting the real `GET /songs/search` endpoint, running the project's own `pytest tests/test_search.py` (all 5 tests pass), and an unrelated sanity check joining `User` to `ListeningEvent`. The installed SQLAlchemy version (2.0.51) appears to auto-collapse duplicate parent rows for legacy `Query().all()` calls regardless of eager-loading config.
+However, through the actual app code path — `db.session.query(Song).outerjoin(...).all()`, which is exactly what `search_songs()` runs — the duplication does not currently surface. Verified this several ways, all deduplicated to a single result: calling `search_songs()` directly, hitting the real `GET /songs/search` endpoint, running the project's own `pytest tests/test_search.py` (all 5 tests pass), an unrelated sanity check joining `User` to `ListeningEvent`, and even a completely bare SQLAlchemy model (no Flask-SQLAlchemy, no relationships at all) mapped directly onto the `song` table — still deduplicated. The only way the raw fan-out actually surfaces is via SQLAlchemy 2.0's Core-style `select()` + `session.execute()` *without* calling `.unique()` on the result (confirmed: 3 rows).
 
-**Status:** parked for now — moving on to Issue #4, will revisit (may need the fuller issue description from the project brief, or a different repro angle).
+**Conclusion:** the underlying bug is real — an unnecessary join that fans out per tag row — but the installed SQLAlchemy version (2.0.51) appears to universally auto-deduplicate full-entity results for the legacy `Query.all()` API this codebase uses, regardless of relationship/eager-loading configuration. That means the reported symptom doesn't currently surface through any real user-facing path in this environment.
+
+**Status:** parked — not reproduced through the live app, not fixed, not counted toward this submission. Treating this as a 4-of-5 submission (#1, #2, #4, #5 fixed and documented); this entry is kept as a record of the investigation in case it's revisited later.
 
 ### Issue #2 — Friends Listening Now shows people from yesterday
 
