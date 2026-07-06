@@ -5,12 +5,12 @@ Handles the "Friends Listening Now" feed and activity feed logic.
 """
 
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import desc
+
 from app import db
-from models import User, Song, ListeningEvent
+from models import ListeningEvent, Song, User
+from sqlalchemy import desc
 
-
-RECENT_THRESHOLD = timedelta(hours=24)
+RECENT_THRESHOLD = timedelta(minutes=30)
 
 
 def get_friends_listening_now(user_id: str) -> list[dict]:
@@ -53,11 +53,13 @@ def get_friends_listening_now(user_id: str) -> list[dict]:
             seen_friends.add(event.user_id)
             friend = db.session.get(User, event.user_id)
             song = db.session.get(Song, event.song_id)
-            result.append({
-                "friend": friend.to_dict(),
-                "song": song.to_dict(),
-                "listened_at": event.listened_at.isoformat(),
-            })
+            result.append(
+                {
+                    "friend": friend.to_dict(),
+                    "song": song.to_dict(),
+                    "listened_at": event.listened_at.isoformat(),
+                }
+            )
 
     return result
 
@@ -96,10 +98,12 @@ def get_activity_feed(user_id: str, limit: int = 20) -> list[dict]:
     for event in events:
         friend = db.session.get(User, event.user_id)
         song = db.session.get(Song, event.song_id)
-        result.append({
-            "friend": friend.to_dict(),
-            "song": song.to_dict(),
-            "listened_at": event.listened_at.isoformat(),
-        })
+        result.append(
+            {
+                "friend": friend.to_dict(),
+                "song": song.to_dict(),
+                "listened_at": event.listened_at.isoformat(),
+            }
+        )
 
     return result

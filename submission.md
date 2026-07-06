@@ -98,6 +98,25 @@ The notification behavior was missing architecturally from the rating action. `r
 
 I added the same notification pattern used by playlist additions: after saving the rating, `rate_song()` now creates a `song_rated` notification for the original sharer unless the sharer rated their own song. I ran `python -m pytest tests/test_notifications.py tests/test_search.py tests/test_playlists.py tests/test_streaks.py` to verify the new notification behavior, the no-self-notification guard, and the existing service tests.
 
+## Issue #2 — Friends Listening Now shows people from yesterday
+
+### How you reproduced it
+
+I reproduced this by adding `tests/test_feed.py::test_listening_now_excludes_yesterday_events`. The test creates a viewer with two friends: one listened 10 minutes ago and one listened 23 hours ago. Before the fix, `get_friends_listening_now()` returned both usernames, so the stale friend appeared in a feed that should represent current listening activity.
+
+### How you found the root cause
+
+I traced `GET /feed/<user_id>/listening-now` in `routes/feed.py` to `feed_service.get_friends_listening_now()`. That function calculates a cutoff using the module-level `RECENT_THRESHOLD`, filters friends' `ListeningEvent.listened_at` values against it, and then returns the newest event per friend. The filtering logic was structurally correct, so the key suspicious value was the threshold constant itself.
+
+### The root cause
+
+`RECENT_THRESHOLD` was set to `timedelta(hours=24)`. That made “Listening Now” mean “anything in the last day,” so a listen from yesterday but less than 24 hours old passed the filter. The rest of the query then correctly included that friend because, according to the overly broad cutoff, the event was still recent.
+
+### Your fix and side-effect check
+
+I changed `RECENT_THRESHOLD` to `timedelta(minutes=30)`, which matches the seeded data comments and the product meaning of “Listening Now”: very recent activity should appear, but yesterday's activity should not. I ran `python -m pytest tests/` to verify the new feed regression test and all existing streak, playlist, search, and notification tests passed.
+
+
 
 
 
