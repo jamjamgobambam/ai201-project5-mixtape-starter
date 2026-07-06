@@ -1,3 +1,9 @@
+# AI Usage
+During this project, I collaborated with an AI assistant, Gemini, to help navigate the codebase, understand data flow, and trace bugs.
+1. **Interactive Shell Tracing:** For Issue #2 and Issue #4, there were no automated tests available. I used Gemini to help me write short Python scripts to run in the `flask shell` so I could manually query the database and verify the exact state of the `listened_at` timestamps and user notification counts.
+2. **Codebase Navigation & Comparison:** For Issue #4, Gemini guided me through a side-by-side comparison of `add_to_playlist()` and `rate_song()` inside `services/notification_service.py` to identify what architectural pattern was missing from the rating logic.
+3. **Course Correction & Verification:** Gemini was helpful but occasionally tried to skip critical steps. For example, when debugging Issue #2 and Issue #4, Gemini immediately suggested looking at the code to find the fix. I had to explicitly course-correct it and insist that we strictly adhere to the project's engineering methodology of *reproducing the bug first* before looking at any files. I also independently verified all of its code suggestions by running the local test suite and checking the browser endpoints myself.
+
 # Codebase Map
 
 **Main Files & Roles:**
