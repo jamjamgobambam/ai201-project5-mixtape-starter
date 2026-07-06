@@ -10,7 +10,7 @@ from app import db
 from models import User, Song, ListeningEvent
 
 
-RECENT_THRESHOLD = timedelta(hours=24)
+RECENT_THRESHOLD = timedelta(minutes=30)
 
 
 def get_friends_listening_now(user_id: str) -> list[dict]:
@@ -103,3 +103,47 @@ def get_activity_feed(user_id: str, limit: int = 20) -> list[dict]:
         })
 
     return result
+
+
+if __name__ == "__main__":
+    import sys
+    import os
+    # Add root folder to sys.path to allow imports from app
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    
+    from app import create_app, db
+    from models import User
+    
+    print("=" * 60)
+    print("DEMO: Feed Service Logic")
+    print("=" * 60)
+    
+    app = create_app()
+    with app.app_context():
+        # Find the seed user "nova" who has friends
+        nova = User.query.filter_by(username="nova").first()
+        if not nova:
+            print("Database not seeded. Please run 'python seed_data.py' first.")
+            sys.exit(0)
+            
+        print(f"User: {nova.username}")
+        print(f"Friends: {[f.username for f in nova.friends]}")
+        print("-" * 60)
+        
+        print("Friends Listening Now (Last 30 mins):")
+        listening_now = get_friends_listening_now(nova.id)
+        if not listening_now:
+            print("  No friends are listening now.")
+        for item in listening_now:
+            print(f"  - Friend: {item['friend']['username']}")
+            print(f"    Song: '{item['song']['title']}' by {item['song']['artist']}")
+            print(f"    Listened at: {item['listened_at']}")
+            
+        print("-" * 60)
+        print("Activity Feed (recent events, unfiltered):")
+        activity = get_activity_feed(nova.id, limit=5)
+        for item in activity:
+            print(f"  - Friend: {item['friend']['username']}")
+            print(f"    Song: '{item['song']['title']}' by {item['song']['artist']}")
+            print(f"    Listened at: {item['listened_at']}")
+        print("=" * 60)
