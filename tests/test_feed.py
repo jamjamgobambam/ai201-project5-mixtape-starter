@@ -79,3 +79,25 @@ def test_boundary_just_inside_window(app, seed_feed):
         _listen(seed_feed["friend"].id, seed_feed["song"].id, timedelta(minutes=29))
         feed = get_friends_listening_now(seed_feed["me"].id)
         assert len(feed) == 1
+
+
+def test_just_outside_window_excluded(app, seed_feed):
+    """A listen 31 minutes ago is outside the 30-minute window."""
+    with app.app_context():
+        _listen(seed_feed["friend"].id, seed_feed["song"].id, timedelta(minutes=31))
+        feed = get_friends_listening_now(seed_feed["me"].id)
+        assert feed == []
+
+
+def test_old_buggy_threshold_excluded(app, seed_feed):
+    """
+    Encode the exact buggy behavior as a negative case: the original threshold
+    was 24 hours. Listens at and just under 24 hours ago must be excluded, so
+    that reintroducing the 24-hour (or any multi-hour) threshold fails here — not
+    just the 3-hour case. Guards against a similar-but-not-identical regression.
+    """
+    with app.app_context():
+        for delta in (timedelta(hours=24), timedelta(hours=23, minutes=59), timedelta(hours=1)):
+            _listen(seed_feed["friend"].id, seed_feed["song"].id, delta)
+            feed = get_friends_listening_now(seed_feed["me"].id)
+            assert feed == [], f"listen {delta} ago should be excluded from 'listening now'"

@@ -64,16 +64,23 @@ business logic lives in `services/`.
 | `services/notification_service.py` | Create/retrieve notifications; `add_to_playlist` and `rate_song` are the two interaction entry points that *should* notify a song's sharer. |
 | `services/playlist_service.py` | Playlist creation and ordered-song retrieval. |
 
-### Data flow — rating a song (traced end to end)
+### Data flow — sharing/interaction triggers a notification (traced end to end)
 
 `POST /songs/<song_id>/rate` (`routes/songs.py`) parses `user_id` and `score`,
 casts the score to `int`, and calls
 `notification_service.rate_song(user_id, song_id, score)`. That service validates
-the score range (1–5), loads the `Song` and rater `User`, upserts a `Rating`
-(unique per `(user_id, song_id)`), commits, and — after the fix — calls
-`create_notification()` to notify `song.shared_by`. There is no separate rating
-model beyond `Rating`; the notification is a side effect of the rate action, the
-same way `add_to_playlist` notifies the sharer when a song is added to a playlist.
+the score range (1–5), loads the `Song` and rater `User`, and upserts a `Rating`
+(unique per `(user_id, song_id)`). There is no separate rating model beyond
+`Rating`.
+
+Notifications are their own flow. When a user's shared song is acted on, a
+service function calls `notification_service.create_notification(user_id, type,
+body)`, which writes a `Notification` row addressed to the song's original sharer
+(`song.shared_by`). `add_to_playlist` is the clearest example: it records the
+playlist entry and then notifies the sharer that their song was added. The route
+layer never creates notifications directly — that always happens inside the
+service functions, so a song's sharer is notified as a side effect of another
+user interacting with their song.
 
 ### Pattern noticed
 
@@ -215,8 +222,12 @@ encode the correct behavior.
   records a listen 3 hours ago and asserts the "listening now" feed is empty.
   Against the buggy 24-hour `RECENT_THRESHOLD` the friend *would* appear, so the
   assertion fails; with the 30-minute window it passes.
-  `test_boundary_just_inside_window` (29 minutes ago) guards the near side of the
-  boundary so the window can't be tightened too far.
+  `test_boundary_just_inside_window` (29 min) and `test_just_outside_window_excluded`
+  (31 min) guard both sides of the boundary, and
+  `test_old_buggy_threshold_excluded` encodes the *original* buggy behavior as a
+  negative case — asserting that listens 24 h, 23 h 59 m, and 1 h ago are all
+  excluded — so that reintroducing the 24-hour (or any multi-hour) threshold
+  fails the suite, not just the 3-hour case.
 - **`tests/test_notifications.py` (added) — Issue #4.**
   `test_rating_notifies_sharer` rates another user's song and asserts the sharer
   has one `song_rated` notification. Against the buggy `rate_song` (which created
