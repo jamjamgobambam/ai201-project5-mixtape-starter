@@ -110,15 +110,15 @@ Contrast with the working case already traced in the Codebase Map: adding someon
 
 **How I found the root cause:**
 
-_TODO — Milestone 3._
+Per the brief's hint, compared `rate_song()` line-by-line against the working `add_to_playlist()` pattern in the same file. Both functions already fetch the acting user (`rater` / `adder`) and the `song`, and both perform their core write followed by `db.session.commit()`. `add_to_playlist()` has one more block after that: `if song.shared_by != added_by_user_id: create_notification(...)`. `rate_song()` simply `return`s after its commit — that missing block, not any typo in existing code, was the moment I was confident I'd found the actual cause.
 
 **The root cause:**
 
-_TODO — Milestone 3._
+`rate_song()` never calls `create_notification()` at all. It saves/updates the `Rating` row correctly, but the entire "check whether the actor is someone other than the sharer, then notify the sharer" step — present in `add_to_playlist()` — was never written for the rating path. This is architectural: not a broken condition, but an entire step missing from one of two structurally parallel functions.
 
 **Fix and side-effect check:**
 
-_TODO — Milestone 3._
+Added the same notify block used by `add_to_playlist()`, right after the rating is committed: if `song.shared_by != user_id`, call `create_notification(user_id=song.shared_by, notification_type="song_rated", body=f"{rater.username} rated your song '{song.title}' {score}/5.")` — reusing the `rater` and `song` objects already fetched earlier in the function, and the `"song_rated"` type string named in `create_notification()`'s own docstring example. Checked callers: `rate_song()` has exactly one call site (`routes/songs.py`'s `POST /songs/<id>/rate` route). Ran the full test suite (`11 passed`, 2 pre-existing failures from the still-unfixed Issue #5, unrelated) and re-ran the original reproduction: `nova`'s notification count now correctly goes from `1 → 2` when `darius` rates her song, with the new notification reading `"darius rated your song 'Midnight Drive' 5/5."`
 
 ### Issue #5 — The last song in a playlist never shows up
 
