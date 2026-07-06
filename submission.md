@@ -56,15 +56,15 @@ Ran twice on two separate days, same result both times — confirmed reproducibl
 
 **How I found the root cause:**
 
-_TODO — Milestone 3._
+Read `update_listening_streak()` in `services/streak_service.py` top to bottom. Its own docstring documents exactly three rules: new user → streak starts at 1, listened today already → no change, listened yesterday → increment by 1. Nothing in the documented rules mentions a day-of-week exception. Comparing the code against that docstring line by line, the `elif` branch that's supposed to implement "listened yesterday → increment" reads `elif days_since_last == 1 and today.weekday() != 6:` — an extra clause not described anywhere in the docstring. That mismatch between documented behavior and actual code was the moment I was confident this was the exact bug, not just a suspicious area.
 
 **The root cause:**
 
-_TODO — Milestone 3._
+Python's `datetime.weekday()` returns `6` for Sunday. The condition `days_since_last == 1 and today.weekday() != 6` is true only when the user listened on a consecutive day *and* today isn't a Sunday. So on a Sunday, even though `days_since_last == 1` (a genuine consecutive-day listen), the `and` clause evaluates to `False`, the `elif` is skipped, and execution falls into the `else` branch, which sets `listening_streak = 1` — resetting the streak instead of incrementing it. This happens every week, specifically on Sundays, matching the user complaint that the streak "keeps resetting."
 
 **Fix and side-effect check:**
 
-_TODO — Milestone 3._
+Removed the `and today.weekday() != 6` clause, leaving `elif days_since_last == 1:` — matching the documented streak rules exactly, with no day-of-week special case. Checked for side effects: `update_listening_streak()` has exactly one caller in the whole codebase (`record_listening_event()` in the same file, called from `routes/songs.py`'s `POST /songs/<id>/listen` route) — nothing else depends on it. Ran the full test suite: all 5 tests in `test_streaks.py` pass, including `test_streak_increments_on_sunday` (previously latent/unasserted against the bug). Also re-ran the original reproduction script against the live API — streak now correctly goes `1 → 2` across the Saturday→Sunday boundary.
 
 ### Issue #3 — The same song keeps showing up twice in search (attempted, not yet reproduced)
 
