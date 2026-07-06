@@ -222,6 +222,24 @@ My fix and side-effect check:
 
 I changed the condition from `elif days_since_last == 1 and today.weekday() != 6:` to `elif days_since_last == 1:`. That keeps the intended rule simple: if the last listen was yesterday, increment the streak, no matter which weekday today is. I checked the related boundary behavior with the streak tests: new users still start at 1, same-day listens still do not double-count, skipped days still reset, and Saturday-to-Sunday now increments correctly.
 
+### Issue #4: I got notified when a friend added my song to a playlist but not when they rated it
+
+How I reproduced it:
+
+I reproduced this through the running Flask app with seeded data. Simone shared `Crown Heights Anthem`, and Nova rated it with a score of 5. The rating endpoint returned a successful rating response, but when I checked Simone's notifications afterward, the response still had `count: 0`.
+
+How I found the root cause:
+
+I traced the rating request from `routes/songs.py`. The route for `POST /songs/<song_id>/rate` calls `notification_service.rate_song`, so I compared that function with `notification_service.add_to_playlist`. The playlist function already had the behavior I expected: after adding a song, it checks whether the adder is different from the original sharer and then calls `create_notification`. The rating function did the validation and saved the rating, but stopped after `db.session.commit()`. That comparison made the missing step clear.
+
+The root cause:
+
+The rating service was only saving the rating. It never created a `Notification` for the user who originally shared the song. So the database had the new `Rating` row, but there was no matching `song_rated` notification for the song owner.
+
+My fix and side-effect check:
+
+I added a notification step to `rate_song` after the rating is committed. If the rater is not the same user who shared the song, the service now creates a `song_rated` notification for the original sharer. I also added tests in `tests/test_notifications.py` for both sides of the behavior: a friend rating someone else's song creates one notification, and rating your own song does not notify yourself.
+
 ## Conclusion
 
 The Mixtape app is organized in a clear way: Flask routes handle requests, service files contain the actual logic, and SQLAlchemy models define the data. Once I understood that structure, the bugs were easier to trace because each issue pointed to one service file.
