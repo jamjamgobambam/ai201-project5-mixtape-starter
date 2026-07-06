@@ -162,7 +162,7 @@ Removed the `[:-1]` slice, returning `[song.to_dict() for song in songs]`. Check
 
 ## git log Screenshot
 
-Run `git log --oneline bugfix/mixtape` in a terminal and paste a screenshot of the output here (or attach it alongside this file per the course portal's submission format). Current output for reference:
+![git log --oneline output](/GitLog_Screenshot.png)
 
 ```
 a085664 docs: write AI usage section and finalize submission for Milestone 4
