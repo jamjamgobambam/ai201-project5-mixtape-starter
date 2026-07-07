@@ -64,6 +64,7 @@ def get_playlist_songs(playlist_id: str) -> list[dict]:
     )
 
     # return [song.to_dict() for song in songs[:-1]]
+    # Return all songs; previously the slice [:-1] incorrectly excluded the last song.
     return [song.to_dict() for song in songs]
 
 
