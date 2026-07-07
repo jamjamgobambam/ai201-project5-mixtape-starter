@@ -9,8 +9,9 @@ from sqlalchemy import desc
 from app import db
 from models import User, Song, ListeningEvent
 
+# Change threshold to 1 hour for "Listening Now"
+RECENT_THRESHOLD = timedelta(hours=1)
 
-RECENT_THRESHOLD = timedelta(hours=24)
 
 
 def get_friends_listening_now(user_id: str) -> list[dict]:
