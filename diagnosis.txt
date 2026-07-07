@@ -1,0 +1,8 @@
+Bug # 1 (Streak Reset: streak_service.py)
+
+The docstring says: Updates streak based on if user listened yesterday
+The code does:  elif days_since_last == 1 and today.weekday() != 6:
+                    user.listening_streak += 1
+The bug is on line 73
+The fix is: remove the != clause for today.weekday() != 6
+
