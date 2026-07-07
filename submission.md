@@ -13,7 +13,19 @@ Python's `date.weekday()` returns 6 for Sunday. The code only incremented the st
 I removed the unnecessary Sunday check and changed the condition to only check `days_since_last == 1`. This matches the streak rule because any two consecutive calendar days should increase the streak. I checked that same-day listening still does not increase the streak and that gaps of more than one day still reset the streak to 1.
 
 
+## Issue #2 — Friends Listening Now shows people from yesterday
 
+### How I reproduced it
+I inspected the Friends Listening Now logic in `services/feed_service.py`. The bug report said a friend who listened at 11pm yesterday still appeared around 9am today. That behavior matches a rolling 24-hour window because yesterday at 11pm is still within the last 24 hours.
+
+### How I found the root cause
+I traced the endpoint behavior to `get_friends_listening_now()` in `services/feed_service.py`. Inside that function, I found that the cutoff time was calculated using `datetime.now(timezone.utc) - RECENT_THRESHOLD`, where `RECENT_THRESHOLD` was set to 24 hours.
+
+### The root cause
+The feature was supposed to show friends who listened today, but the code was checking for friends who listened within the last 24 hours. A rolling 24-hour window allows yesterday evening’s listens to remain visible the next morning, which is exactly what the user reported.
+
+### Your fix and side-effect check
+I changed the cutoff from “now minus 24 hours” to the start of the current UTC calendar day. This means the feed only includes listening events from today. I also checked that the function still filters only the current user’s friends, still orders by most recent listen, and still deduplicates to show only one most recent song per friend.
 
 ## Issue #3 — The same song keeps showing up twice in search
 
@@ -28,3 +40,5 @@ The search query used an outer join to song_tags. Since one song can have multip
 
 ### Your fix and side-effect check
 I removed the unnecessary outer join from the search query and kept the filter on Song.title and Song.artist. The song tags are still included through song.to_dict(), so the response still contains tags. I retested searches for Anthem and Borough to confirm the matching song still appears once.
+
+
