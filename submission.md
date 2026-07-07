@@ -68,4 +68,4 @@ I used Claude Code (Opus) as a navigation and verification aid, not a bug-guesse
 
 ## Regression Test
 
-See `tests/test_playlists.py` — `test_get_playlist_songs_returns_all_songs` asserts every added song is returned (would have failed against the `[:-1]` slice).
+See `tests/test_playlists.py` — `test_playlist_returns_all_songs` asserts all 5 seeded songs are returned. It failed (returned 4) against the `[:-1]` slice and passes after the fix; `test_playlist_returns_songs_in_order` also confirms the last song ("Track 5") is present and ordering is preserved.
