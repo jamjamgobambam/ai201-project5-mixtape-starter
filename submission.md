@@ -1,3 +1,20 @@
+## Issue #1 — My listening streak keeps resetting
+
+### How I reproduced it
+I inspected the streak logic in `services/streak_service.py` and focused on the reported Saturday-to-Sunday behavior. The issue happens when a user listened the previous day and the current day is Sunday. In that case, `days_since_last` is 1, but `today.weekday()` is 6.
+
+### How I found the root cause
+I looked at the endpoint behavior described in the issue, then traced the streak update logic to `record_listening_event()` and `update_listening_streak()` in `services/streak_service.py`. The suspicious condition was the streak increment check: `days_since_last == 1 and today.weekday() != 6`.
+
+### The root cause
+Python's `date.weekday()` returns 6 for Sunday. The code only incremented the streak if the user listened yesterday and today was not Sunday. So when a user listened on Saturday and then again on Sunday, the condition failed and the code reset the streak to 1. This directly matches the user report that the streak reset on Sunday.
+
+### Your fix and side-effect check
+I removed the unnecessary Sunday check and changed the condition to only check `days_since_last == 1`. This matches the streak rule because any two consecutive calendar days should increase the streak. I checked that same-day listening still does not increase the streak and that gaps of more than one day still reset the streak to 1.
+
+
+
+
 ## Issue #3 — The same song keeps showing up twice in search
 
 ### How I reproduced it
