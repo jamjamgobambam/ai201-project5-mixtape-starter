@@ -236,4 +236,61 @@ no new failures.
 
 ---
 
-*(Remaining entries below.)*
+### Issue #5 — The last song in a playlist never shows up
+
+**How I reproduced it.** Ran `pytest tests/test_playlists.py`:
+`test_playlist_returns_all_songs` failed — a 5-song playlist returned 4 songs —
+and `test_playlist_returns_songs_in_order` failed showing the list stopped at
+`Track 4`. I also confirmed against seed data: the "Late Night Vibes" playlist
+has 7 rows in `playlist_entries`, but `get_playlist_songs` returned only 6, and
+the missing one was always the **highest-position (last)** song.
+
+**How I found the root cause.** Trace: `GET /playlists/<id>/songs`
+(`routes/playlists.py:34`) → `get_playlist_songs` (`playlist_service.py:38`). The
+query is correct: it joins `playlist_entries`, filters by playlist, and orders by
+`position` ascending. The bug is in the very last line, the return statement:
+`return [song.to_dict() for song in songs[:-1]]`. The `[:-1]` slice was the
+smoking gun — it drops the final element of an already-correct, correctly-ordered
+list. The function's own docstring says "returns **all** songs in the playlist,"
+which the slice directly contradicts.
+
+**The root cause.** `songs[:-1]` is a Python slice that returns every element
+*except the last one*. Because the songs are ordered by ascending `position`, the
+last element is always the highest-position (most recently added) song, so that
+one song was silently omitted from every non-empty playlist. It was an
+off-by-one truncation in the return value, not a query or ordering problem.
+
+**My fix and side-effect check.** I changed the slice to iterate the full list:
+`return [song.to_dict() for song in songs]` (`playlist_service.py:66`). I checked
+the boundary on the small-count side too, which is where `[:-1]` is most
+dangerous: a 1-song playlist previously returned `[]` (the slice ate the only
+song), and now returns that 1 song. The empty-playlist path is unaffected —
+`[][:-1]` and `[]` are both empty — and `test_empty_playlist_returns_empty_list`
+still passes. All 13 tests pass, including the two playlist tests that previously
+failed and the ordering test.
+
+---
+
+## Issues investigated but not fixed
+
+**Issue #3 — "the same song keeps showing up twice in search" — could not
+reproduce; not a real bug.** `search_songs` (`search_service.py`) does
+`db.session.query(Song).outerjoin(song_tags, ...)`. On paper this fans out: a
+song with 3 tags matches 3 rows of `song_tags`, so the SQL returns the song 3
+times. The seed-data comments and the test docstrings both assert this causes
+duplicates. But when I actually ran `search_songs("Crown Heights")` and
+`pytest tests/test_search.py`, the multi-tag song came back **exactly once** and
+every search test **passed**. The reason: SQLAlchemy's ORM deduplicates
+full-entity results by primary-key identity — `query(Song)...all()` returns
+distinct `Song` objects regardless of row fan-out. So the join is unnecessary
+(dead code) but produces no observable duplication. Per the brief's guidance
+("if you can't reproduce a bug, try a different one"), I did not "fix" a bug that
+does not manifest, and chose a reproducible issue instead. If desired, the join
+could be removed for clarity, but that is a cleanup, not a bug fix.
+
+**Issue #4 — rating a song sends no notification — real bug, not selected.** I
+confirmed this reproduces (`rate_song` commits a `Rating` but never calls
+`create_notification`, unlike its sibling `add_to_playlist`). I left it out
+because I selected the three boundary-condition issues (#1, #2, #5); it is a
+genuine, easily-fixable omission (add a `create_notification(user_id=song.shared_by,
+notification_type="song_rated", ...)` call guarded by `song.shared_by != user_id`).
