@@ -198,4 +198,42 @@ still start at 1. No other code reads `weekday()`, so nothing else is affected.
 
 ---
 
+### Issue #2 — Friends Listening Now shows people from yesterday
+
+**How I reproduced it.** There is no unit test for this feed, so I reproduced it
+against seed data. I called `get_friends_listening_now` directly under an app
+context for `kenji` and printed how long ago each returned friend last listened.
+Result: kenji's "listening now" feed contained **nova, whose only recent listen
+was 2 hours ago** — clearly not "now." (nova's own feed correctly showed friends
+who listened 10–20 minutes ago.) So the feed was surfacing stale events.
+
+**How I found the root cause.** Trace: `GET /feed/<id>/listening-now`
+(`routes/feed.py:9`) → `get_friends_listening_now` (`feed_service.py:16`). The
+function builds `cutoff = now - RECENT_THRESHOLD` and returns every friend event
+newer than the cutoff (deduped to one per friend). The logic is correct; the
+constant is not. At the top of the file: `RECENT_THRESHOLD = timedelta(hours=24)`.
+That was the moment it clicked — a 24-hour "recently" window is the entire day,
+so anyone who listened at any point in the last day counts as "listening now."
+
+**The root cause.** `RECENT_THRESHOLD` was set to 24 hours. "Friends Listening
+Now" is meant to show who is *actively* listening right now, but a 24-hour cutoff
+admits events from many hours (up to a full day) earlier. Any friend with a
+listen anywhere in the previous 24 hours appeared in the live feed, which is why
+kenji saw nova's 2-hour-old event. The seed data encodes exactly this: "recent"
+events are <30 min old and "older" events are 2+ hours old and explicitly marked
+as ones that should *not* appear.
+
+**My fix and side-effect check.** I changed the constant to
+`timedelta(minutes=30)` (`feed_service.py`), matching the seed data's definition
+of a genuinely-current listen, and added a comment explaining the intent. I
+verified both sides of the boundary after re-seeding: nova's feed still returns
+its 3 friends who listened 10/15/20 minutes ago (inside the window), and kenji's
+feed now returns 0 — nova's 2-hour-old event is correctly excluded. I checked
+that `get_activity_feed` in the same file is unaffected: it deliberately does not
+use `RECENT_THRESHOLD` (it returns the most recent N events regardless of age),
+so the tightened window does not touch the activity feed. Full test suite shows
+no new failures.
+
+---
+
 *(Remaining entries below.)*
