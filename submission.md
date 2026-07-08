@@ -42,7 +42,15 @@ Notably, `rate_song()` never calls `create_notification()`, unlike the parallel 
 
 ## AI Usage
 
-_(To be filled in throughout the project — will describe what I asked AI to explain, trace, or summarize, and where I had to verify or correct its explanation.)_
+I used Claude throughout this project primarily for codebase navigation, tracing execution flow, and verifying hypotheses before committing to a fix — not for generating fixes blind.
+
+**Codebase orientation (Milestone 1):** I had Claude read through `app.py`, `models.py`, the `routes/` layer, and all five `services/` files, then summarize each file's responsibility and trace one full data flow (a user rating a song, end to end from the route through the service layer). This gave me a working mental model of the app's structure — routes as thin controllers, all logic in services — before I opened a single issue.
+
+**Reproduction (Milestone 2):** For each bug, Claude helped me design a reproduction strategy suited to that bug's specific trigger condition — a controlled `flask shell` session with fixed datetimes for the date-dependent bugs (#1, #2), and live HTTP requests for the bugs that reproduced naturally against seed data (#5, #4). This mattered most for Issue #3: my first few reproduction attempts showed the bug _not_ occurring, and rather than assuming I'd made a mistake, we worked through several layers of verification together (checking a fresh shell session to rule out identity-map caching, inspecting the raw SQL join at the column level versus the full-entity level, and finally cross-checking against the repo's own pre-written test for this exact scenario). That process showed the underlying code smell (missing `.distinct()`) is real, but the bug doesn't manifest as user-visible duplication with the installed library versions — an honest finding I wouldn't have trusted without that layered verification, and I swapped Issue #3 out for Issue #2 as a result.
+
+**Investigation and fixing (Milestone 3):** For each bug, I had Claude compare the buggy function against the codebase's own working precedent where one existed (e.g., comparing `rate_song` against the working `add_to_playlist` line-by-line for Issue #4, which was flagged as an architectural gap rather than a typo). I verified each proposed root cause against the actual code myself before applying any fix, and verified every fix afterward by re-running the reproduction and the relevant test suite (or live HTTP checks, where no test file existed, as with the feed and notification services).
+
+**Where I had to verify or correct something:** During Issue #2's reproduction, an early result showed a listening event's timestamp shifted by exactly one day between insertion and read-back. Rather than accepting that at face value, we traced it down to leftover test data from an earlier `flask shell` session (a stray event with a mismatched timestamp, from mixing timezone-aware and naive datetimes) rather than a real storage bug — cleaning that up and re-running with consistent naive datetimes gave a trustworthy result. This was a good reminder that shell-based reproduction can introduce its own noise, and that verifying what's actually stored in the database (rather than trusting a single derived output) is worth the extra step.
 
 ---
 

@@ -36,7 +36,8 @@ The bugs live in the `services/` layer. The routes call services — if somethin
 
 ---
 
-## Setup
+<details>
+<summary><strong>Setup</strong></summary>
 
 Create and activate a virtual environment:
 
@@ -79,7 +80,7 @@ Run tests:
 pytest tests/
 ```
 
----
+## </details>
 
 ## The Five Open Issues
 
@@ -120,21 +121,29 @@ See the project brief for full submission requirements.
 
 ## Progress
 
-**Milestone 1 — Fork, Set Up, and Orient Yourself: Complete**
+\*\*Milestone 1
+
+<details>
+<summary><strong>Fork, Set Up, and Orient Yourself: Complete</strong></summary>
 
 - Repo forked and cloned; `bugfix/mixtape` branch created
 - Environment set up, dependencies installed, database seeded
 - App confirmed running locally via `FLASK_APP=app:create_app flask run`
 - Codebase map and data flow trace written in `submission.md`
 - All five issue descriptions read
+</details>
 
-**Milestone 2 — Reproduce Chosen Bugs: Complete**
+\*\*Milestone 2
+
+<details>
+<summary><strong>Reproduce Chosen Bugs: Complete</strong></summary>
 
 - Issue #1 (streak) reproduced via `flask shell` with controlled Saturday/Sunday datetimes
 - Issue #3 (search duplicates) investigated thoroughly: the raw SQL join does produce duplicate rows for multi-tag songs, but `search_songs()` queries full ORM entities, which deduplicate by primary key in this SQLAlchemy version. The existing regression test `test_search_no_duplicates_multi_tag_song` passes. **Bug does not reproduce in this environment** — swapped out in favor of Issue #2.
 - Issue #2 (stale feed entries) reproduced via `flask shell` with a controlled "yesterday" listening event, confirming the rolling 24-hour window includes events from the previous calendar day
 - Issue #5 (playlist truncation) reproduced via live HTTP GET: playlist with 7 songs in `playlist_entries` returns only 6 via the API
 - Issue #4 (notifications, stretch) reproduced via live HTTP POST + GET: rating saves successfully but no notification is created for the song's original sharer
+</details>
 
 **Updated bug plan:**
 
@@ -147,7 +156,10 @@ See the project brief for full submission requirements.
 | Regression test (streak or feed) | Stretch deliverable                                              |
 | #3 — Duplicate search results    | Investigated, does not reproduce in this environment — not fixed |
 
-**Milestone 3 — Investigate, Fix, and Document Each Bug: Complete**
+\*\*Milestone 3
+
+<details>
+<summary><strong>Investigate, Fix, and Document Each Bug: Complete</strong></summary>
 
 - Issue #1 (streak) fixed: removed the `today.weekday() != 6` condition that wrongly excluded Sundays from incrementing the streak
 - Issue #2 (stale feed) fixed: replaced the rolling 24-hour `RECENT_THRESHOLD` cutoff with a calendar-day (midnight UTC) cutoff
@@ -157,6 +169,7 @@ See the project brief for full submission requirements.
 - All four fixes verified against relevant test suites (`test_streaks.py`, `test_playlists.py`) or live HTTP checks where no test file existed (feed, notifications), each committed as its own `fix:` commit
 - Complete 5-field root cause analysis entries written for all four fixed bugs, plus a documented investigation note for Issue #3, in `submission.md`
 - Regression test stretch goal satisfied by the pre-existing `test_streak_increments_on_sunday`, which now passes after the Issue #1 fix
+</details>
 
 **Updated bug plan:**
 
@@ -169,4 +182,23 @@ See the project brief for full submission requirements.
 | Regression test                  | Satisfied via existing `test_streak_increments_on_sunday`        |
 | #3 — Duplicate search results    | Investigated, not fixed (does not reproduce in this environment) |
 
-**Next up:** Milestone 4 — final review, commit history check, and AI usage write-up.
+\*\*Milestone 4
+
+<details>
+<summary><strong>Final Review and AI Usage: Complete</strong></summary>
+
+- Verified commit history via `git log --oneline`: 4 separate `fix:` commits (one per bug), each with a descriptive message, all on `bugfix/mixtape` and pushed to `origin/bugfix/mixtape`
+- Reviewed all root cause analysis entries in `submission.md` for completeness against the 5 required fields (issue/title, how reproduced, how found root cause, the root cause, fix + side-effect check)
+- Wrote the AI Usage section, describing how AI was used for codebase orientation, reproduction strategy design, root cause comparison against working precedent, and verification/correction during Issue #2's and Issue #3's investigations
+</details>
+
+**Final status: submission complete.**
+
+| Issue                            | Status                                                           |
+| -------------------------------- | ---------------------------------------------------------------- |
+| #1 — Streak resets on Sunday     | Fixed                                                            |
+| #2 — Stale feed entries          | Fixed                                                            |
+| #5 — Last playlist song missing  | Fixed                                                            |
+| #4 — Missing rating notification | Fixed (stretch)                                                  |
+| Regression test                  | Satisfied via existing `test_streak_increments_on_sunday`        |
+| #3 — Duplicate search results    | Investigated, not fixed (does not reproduce in this environment) |
