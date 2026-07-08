@@ -84,6 +84,23 @@ _(Full 5-field entries to be completed per bug in Milestone 3. Reproduction note
 
 Investigated thoroughly rather than fixed. Raw SQL join (selecting `Song.id` only) confirmed 3 duplicate rows for a 3-tag song, proving the missing `.distinct()` on the `outerjoin` in `search_service.py` is a genuine code smell. However, `search_songs()` queries full `Song` ORM entities rather than raw columns, and in a fresh `flask shell` session (no identity-map caching), that same join consistently returned only 1 result for the 3-tag song — full-entity queries appear to deduplicate by primary key in the installed Flask-SQLAlchemy 3.1.1 / SQLAlchemy version. Cross-checked against the existing test suite: all 5 tests in `test_search.py`, including `test_search_no_duplicates_multi_tag_song` (written specifically to catch this bug), pass without any code changes. Conclusion: the bug's underlying mechanism exists in the query construction, but it does not currently produce user-visible duplicates in this environment. Swapped out in favor of Issue #2 as one of the three required fixes; not fixed as part of this submission.
 
-### Issue #4 — Missing rating notification (stretch, pending fix)
+### Issue #4 — Missing rating notification (stretch)
 
-Reproduced via live HTTP: `POST /songs/<id>/rate`, with one user rating a song shared by a different user, succeeded and saved the rating correctly, but `GET /users/<sharer_id>/notifications` for the song's original sharer returned `count: 0` — confirming no notification is created when a song is rated, unlike when a song is added to a playlist. Full root cause analysis and fix pending.
+**How I reproduced it:** Via live HTTP: `POST /songs/<id>/rate` with one user (nova) rating a song ("Block Party") shared by a different user (darius) succeeded and saved the rating correctly (score, `song_id`, `user_id` all returned as expected). Checking `GET /users/<darius_id>/notifications` immediately after returned `count: 0` — no notification was created for the sharer, unlike the working playlist-add notification.
+
+**How I found the root cause:** Compared `rate_song` line-by-line against the working `add_to_playlist` function, both in `notification_service.py`, per the hint that the root cause is architectural rather than a typo. Both functions load the relevant `Song` and the acting `User`, and both know the song's `shared_by` field. `add_to_playlist` ends with a guarded call to `create_notification()` (skipping the sharer if they're the one performing the action). `rate_song` has no equivalent call anywhere in its body — it saves or updates the `Rating`, commits, and returns, with no notification step at all.
+
+**The root cause:** The notification step for ratings was never implemented, not miswritten. `create_notification()` already exists as a shared, reusable helper, and `rate_song` already has every piece of data it needs (the song's `shared_by`, the rater's username, the song's title, the score) to build a rating notification the same way `add_to_playlist` builds a playlist notification — the function simply never calls it. This is why the hint calls it architectural: the missing piece isn't a broken condition, it's an entire absent code path that has a clear working precedent elsewhere in the same file.
+
+**My fix and side-effect check:** Added a guarded `create_notification()` call at the end of `rate_song`, immediately after `db.session.commit()` and before the `return rating` statement, mirroring the same `if <sharer> != <acting user>` self-notification guard used in `add_to_playlist`:
+
+```python
+if song.shared_by != user_id:
+    create_notification(
+        user_id=song.shared_by,
+        notification_type="song_rated",
+        body=f"{rater.username} rated your song '{song.title}' {score} stars.",
+    )
+```
+
+Verified via live HTTP: after the fix, rating "Block Party" as nova produced a new notification for darius ("nova rated your song 'Block Party' 4 stars."), with `count: 1`. Checked for side effects by confirming nova's own notifications were untouched — her original seeded playlist-add notification ("darius added your song 'Midnight Drive' to the playlist 'Late Night Vibes'") was still present and unchanged, confirming the two notification paths (`add_to_playlist` and `rate_song`) operate independently with no cross-interference. There is no existing `test_notifications.py` in the repo, so live HTTP verification was the only regression check available for this fix.
