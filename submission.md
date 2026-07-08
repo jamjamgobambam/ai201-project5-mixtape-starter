@@ -8,7 +8,7 @@ never shows up).
 
 ### Commit history (`git log --oneline`)
 
-![git log --oneline on bugfix/mixtape](images/Screenshot%202026-07-07%20at%2011.17.30%20PM.png)
+![git log --oneline on bugfix/mixtape](images/git-log-oneline.png)
 
 Three separate `fix:` commits (one per bug) plus the pre-work `docs:` commit that
 adds this codebase map, all on the `bugfix/mixtape` branch.
