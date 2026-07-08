@@ -6,6 +6,13 @@ Bugs fixed (3): **Issue #1** (streak resets on Sunday), **Issue #2** (Friends
 Listening Now shows people from hours ago), **Issue #5** (last song in a playlist
 never shows up).
 
+### Commit history (`git log --oneline`)
+
+![git log --oneline on bugfix/mixtape](images/Screenshot%202026-07-07%20at%2011.17.30%20PM.png)
+
+Three separate `fix:` commits (one per bug) plus the pre-work `docs:` commit that
+adds this codebase map, all on the `bugfix/mixtape` branch.
+
 ---
 
 ## AI Usage
