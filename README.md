@@ -128,15 +128,23 @@ See the project brief for full submission requirements.
 - Codebase map and data flow trace written in `submission.md`
 - All five issue descriptions read
 
-**Bug plan:**
+**Milestone 2 — Reproduce Chosen Bugs: Complete**
 
-| Issue                             | Status                                       |
-| --------------------------------- | -------------------------------------------- |
-| #1 — Streak resets on Sunday      | Required fix                                 |
-| #3 — Duplicate search results     | Required fix                                 |
-| #5 — Last playlist song missing   | Required fix                                 |
-| #4 — Missing rating notification  | Stretch fix                                  |
-| Regression test (streak / search) | Stretch deliverable                          |
-| #2 — Stale feed entries           | Not fixed (out of scope for this submission) |
+- Issue #1 (streak) reproduced via `flask shell` with controlled Saturday/Sunday datetimes
+- Issue #3 (search duplicates) investigated thoroughly: the raw SQL join does produce duplicate rows for multi-tag songs, but `search_songs()` queries full ORM entities, which deduplicate by primary key in this SQLAlchemy version. The existing regression test `test_search_no_duplicates_multi_tag_song` passes. **Bug does not reproduce in this environment** — swapped out in favor of Issue #2.
+- Issue #2 (stale feed entries) reproduced via `flask shell` with a controlled "yesterday" listening event, confirming the rolling 24-hour window includes events from the previous calendar day
+- Issue #5 (playlist truncation) reproduced via live HTTP GET: playlist with 7 songs in `playlist_entries` returns only 6 via the API
+- Issue #4 (notifications, stretch) reproduced via live HTTP POST + GET: rating saves successfully but no notification is created for the song's original sharer
 
-**Next up:** Milestone 2 — reproduce each chosen bug before writing any fix code.
+**Updated bug plan:**
+
+| Issue                            | Status                                                           |
+| -------------------------------- | ---------------------------------------------------------------- |
+| #1 — Streak resets on Sunday     | Required fix                                                     |
+| #2 — Stale feed entries          | Required fix                                                     |
+| #5 — Last playlist song missing  | Required fix                                                     |
+| #4 — Missing rating notification | Stretch fix                                                      |
+| Regression test (streak or feed) | Stretch deliverable                                              |
+| #3 — Duplicate search results    | Investigated, does not reproduce in this environment — not fixed |
+
+**Next up:** Milestone 3 — investigate root cause, fix, and document each bug one at a time.

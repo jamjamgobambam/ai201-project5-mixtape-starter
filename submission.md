@@ -1,4 +1,3 @@
-
 # Mixtape Bug Hunt — Submission
 
 ## Codebase Map
@@ -43,10 +42,27 @@ Notably, `rate_song()` never calls `create_notification()`, unlike the parallel 
 
 ## AI Usage
 
-*(To be filled in throughout the project — will describe what I asked AI to explain, trace, or summarize, and where I had to verify or correct its explanation.)*
+_(To be filled in throughout the project — will describe what I asked AI to explain, trace, or summarize, and where I had to verify or correct its explanation.)_
 
 ---
 
 ## Root Cause Analysis Entries
 
-*(To be filled in as each bug is investigated and fixed — Milestone 3.)*
+_(Full 5-field entries to be completed per bug in Milestone 3. Reproduction notes captured below while fresh, from Milestone 2.)_
+
+### Reproduction notes (Milestone 2)
+
+**Issue #1 — Streak resets on Sunday**
+Reproduced via `flask shell`, bypassing the real system clock to control the exact dates involved. Called `update_listening_streak(user, saturday)` then `update_listening_streak(user, sunday)` with fixed `datetime` objects for a real Saturday/Sunday pair. Streak went from incrementing normally to resetting to 1 on the Sunday call, despite the two days being consecutive.
+
+**Issue #2 — Friends Listening Now shows stale entries**
+Reproduced via `flask shell`. Inserted a `ListeningEvent` for a friend (darius) timestamped at 11pm the previous calendar day, then called `get_friends_listening_now()` using the real current time (afternoon of the next day). The friend still appeared in the "listening now" feed with yesterday's timestamp, confirming the 24-hour rolling window (`RECENT_THRESHOLD = timedelta(hours=24)`) does not respect calendar-day boundaries.
+
+**Issue #3 — Duplicate search results (investigated, not reproduced)**
+Investigated via `flask shell` across multiple angles: raw SQL join (`Song.id` only) confirmed 3 duplicate rows for a 3-tag song; the same join through `search_songs()` (full ORM entities) consistently returned only 1 result, in a fresh session with no identity-map caching involved. Cross-checked against the existing test suite — all 5 tests in `test_search.py`, including `test_search_no_duplicates_multi_tag_song`, pass. Conclusion: the missing `.distinct()` is a real code smell and latent risk, but does not currently produce user-visible duplicates with the installed Flask-SQLAlchemy 3.1.1 stack, likely because full-entity ORM queries deduplicate by primary key in this version. Not fixed as one of the required 3; swapped for Issue #2.
+
+**Issue #5 — Last playlist song missing**
+Reproduced via live HTTP GET against a seeded playlist confirmed to have 7 rows in `playlist_entries`. `GET /playlists/<id>/songs` returned `count: 6`, missing the most recently added song.
+
+**Issue #4 — Missing rating notification (stretch)**
+Reproduced via live HTTP: `POST /songs/<id>/rate` with one user rating a song shared by a different user succeeded (score saved correctly), but `GET /users/<sharer_id>/notifications` for the song's original sharer returned `count: 0` — no notification was created.
