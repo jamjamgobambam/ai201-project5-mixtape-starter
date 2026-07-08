@@ -1,3 +1,32 @@
+## Codebase Map
+
+Mixtape is a Flask API application. The app is organized so that route files receive HTTP requests, service files contain the main business logic, and model files define the database tables.
+
+### Main files and folders
+
+- `app.py`: Creates the Flask app, configures the database, and registers the routes.
+- `models.py`: Defines the main database models such as `User`, `Song`, `Playlist`, `ListeningEvent`, `Notification`, `Rating`, and the playlist/tag join tables.
+- `seed_data.py`: Seeds the database with test users, songs, playlists, friendships, listening events, and other sample data used to reproduce bugs.
+- `routes/`: Contains endpoint definitions. These files handle incoming API requests, read path/query/body parameters, call service functions, and return JSON responses.
+- `services/`: Contains the core business logic for each feature.
+  - `search_service.py`: Handles song search.
+  - `streak_service.py`: Records listening events and updates user listening streaks.
+  - `feed_service.py`: Builds the Friends Listening Now feed and activity feed.
+  - `notification_service.py`: Creates and retrieves notifications, and handles notification-related song interactions.
+  - `playlist_service.py`: Creates playlists and retrieves playlist songs.
+
+### Pattern I noticed
+
+The project separates request handling from business logic. The route files are thin and mostly delegate work to service files. The service files query or update the database using SQLAlchemy models, then return dictionaries that can be converted to JSON responses.
+
+### Example data flow — rating a song
+
+When a user rates a song, the request goes through the songs route for `POST /songs/<song_id>/rate`. That route passes the user ID, song ID, and rating score to the rating logic in `services/notification_service.py`. The `rate_song()` function checks that the score is valid, loads the song and rater from the database, creates or updates a `Rating` record, and commits the change. After my fix, if the rater is not the original sharer of the song, the service also creates a `song_rated` notification for the song owner.
+
+### Example data flow — retrieving playlist songs
+
+When a user requests `GET /playlists/<playlist_id>/songs`, the route calls `get_playlist_songs()` in `services/playlist_service.py`. That function loads the playlist, queries songs through the playlist join table, orders them by playlist position, and returns each song as a dictionary.
+
 ## Issue #1 — My listening streak keeps resetting
 
 ### How I reproduced it
@@ -30,7 +59,7 @@ I changed the cutoff from “now minus 24 hours” to the start of the current U
 ## Issue #3 — The same song keeps showing up twice in search
 
 ### How I reproduced it
-I tested the search endpoint using GET /songs/search?q=Anthem and also tried related terms like Borough and Crown. In my local run, the API returned one result, but the search code showed a condition that could create duplicate rows when a matching song has multiple tags.
+I tested the search endpoint using `GET /songs/search?q=Anthem` and related terms like `Borough` and `Crown`. In my browser test, the endpoint returned one visible result, but the matching song had multiple tags in the returned data. I then inspected the search query and confirmed that it joined the song table to the tag join table while only filtering by title and artist. This creates the duplicate condition when a matching song has multiple joined tag rows.
 
 ### How I found the root cause
 I started from the endpoint /songs/search?q=Anthem and searched the codebase for the search function. I found services/search_service.py and looked at search_songs(). The function queried Song but also joined the song_tags table even though the filter only checked Song.title and Song.artist.
@@ -71,20 +100,23 @@ The code used Python slicing `songs[:-1]`, which means “all items except the l
 I changed the return statement from `songs[:-1]` to `songs`, so the function returns every song in the playlist. I checked that the ordering logic still stays the same because the query still orders by `playlist_entries.c.position`.
 
 
-# Mixtape Bug Hunt Submission
-
 ## AI Usage
 
-## Codebase Map
+I used AI as a debugging guide and explanation partner during this project. I asked it to help me understand unfamiliar service files, explain suspicious logic, and compare similar code paths. For example, I used AI to reason through the streak logic in `services/streak_service.py`, the playlist slicing behavior in `services/playlist_service.py`, and the difference between the working playlist notification path and the missing rating notification path in `services/notification_service.py`.
 
-## Issue #1 — My listening streak keeps resetting
-
-## Issue #2 — Friends Listening Now shows people from yesterday
-
-## Issue #3 — The same song keeps showing up twice in search
-
-## Issue #4 — I got notified when a friend added my song to a playlist but not when they rated it
-
-## Issue #5 — The last song in a playlist never shows up
+I did not rely on AI alone to make changes. I verified the suggestions by reading the actual code, checking the project issue descriptions, running the Flask app locally, testing endpoints in the browser, and reviewing the affected service files myself. When the search duplicate issue did not reproduce clearly from the browser response, I documented that and used the code structure to identify the risky join that could cause duplicate rows.
 
 ## Git Log Screenshot
+## Git Log Screenshot
+
+Screenshot included in submission showing:
+
+```text
+ed11ba5 fix: return all songs in playlist
+7c177fb fix: notify song sharer when their song is rated
+70ee56c fix: limit listening now feed to today's events
+f713f65 fix: allow listening streaks to continue on Sunday
+25f2fb4 fix: remove unnecessary tag join from song search
+
+
+![Git log screenshot](image.png)
