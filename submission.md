@@ -50,7 +50,15 @@ _(To be filled in throughout the project — will describe what I asked AI to ex
 
 _(Full 5-field entries to be completed per bug in Milestone 3. Reproduction notes captured below while fresh, from Milestone 2.)_
 
-### Reproduction notes (Milestone 2)
+### Issue #1 — My listening streak keeps resetting
+
+**How I reproduced it:** In `flask shell`, called `update_listening_streak(user, saturday)` followed by `update_listening_streak(user, sunday)` using fixed `datetime` objects for a real consecutive Saturday/Sunday pair, bypassing the system clock so the exact dates were controlled. After the Saturday call the streak was 1; after the Sunday call (a consecutive day) the streak dropped back to 1 instead of incrementing to 2.
+
+**How I found the root cause:** Navigated from the failing behavior straight to `streak_service.py`, since it's the only file that touches `listening_streak`. Read `update_listening_streak` top to bottom and found the three-branch conditional that decides whether to increment, hold, or reset the streak. The `elif` branch included an extra condition, `today.weekday() != 6`, that had no explanation in the docstring or comments. Checked what `datetime.weekday()` returns for a known Sunday date (`6`) and confirmed that was the exact day the bug reports named.
+
+**The root cause:** The streak-increment branch was `elif days_since_last == 1 and today.weekday() != 6`. Python's `datetime.weekday()` returns `6` for Sunday (Monday=0 through Sunday=6). Because the condition explicitly excluded weekday `6`, any listen that fell on a Sunday and was otherwise a valid consecutive-day listen (`days_since_last == 1`) failed the `and` check and fell through to the `else` branch, which unconditionally reset the streak to 1. There is no legitimate reason a calendar weekday should affect whether a streak increments — the only two things that should matter are whether it's a new day and whether exactly one day has passed since the last listen.
+
+**My fix and side-effect check:** Removed `and today.weekday() != 6` from the `elif` condition, leaving `elif days_since_last == 1:`. This is the smallest possible change that removes the erroneous weekday exclusion while leaving the same-day and skipped-day branches untouched. Verified by re-running the reproduction (Saturday → 1, Sunday → 2, as expected) and by running the full `test_streaks.py` suite: all 5 tests pass, including `test_streak_increments_on_sunday` (written to catch this exact bug) and the four pre-existing tests for new users, consecutive days, same-day no-double-count, and skipped-day resets, confirming no adjacent streak behavior was broken.
 
 **Issue #1 — Streak resets on Sunday**
 Reproduced via `flask shell`, bypassing the real system clock to control the exact dates involved. Called `update_listening_streak(user, saturday)` then `update_listening_streak(user, sunday)` with fixed `datetime` objects for a real Saturday/Sunday pair. Streak went from incrementing normally to resetting to 1 on the Sunday call, despite the two days being consecutive.
