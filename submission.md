@@ -161,4 +161,41 @@ table. The day-boundary comparison in this function is Issue #1.
 
 ## Root Cause Analysis
 
-*(Filled in per bug, below, in the order fixed.)*
+### Issue #1 — My listening streak keeps resetting
+
+**How I reproduced it.** Ran `pytest tests/test_streaks.py`. The test
+`test_streak_increments_on_sunday` failed with `assert 1 == 2`: it records a
+listen on Saturday 2024-06-15 (streak → 1), then Sunday 2024-06-16, and expects
+the streak to increment to 2, but it reset to 1. I confirmed by hand that the
+trigger is specifically **the second listen landing on a Sunday**, one calendar
+day after the previous listen — no other weekday reproduces it.
+
+**How I found the root cause.** Trace: `POST /songs/<id>/listen`
+(`routes/songs.py:43`) → `record_listening_event` → `update_listening_streak`
+(`streak_service.py:42`). Reading that function, every branch looked right
+*except* the increment guard on line 73:
+`elif days_since_last == 1 and today.weekday() != 6:`. The moment I was sure was
+seeing `!= 6` — I confirmed in a REPL that Python's `datetime.weekday()` returns
+**6 for Sunday** (Mon=0 … Sun=6). So the extra condition specifically excludes
+Sundays from the "consecutive day" increment path.
+
+**The root cause.** `datetime.weekday()` returns 6 for Sunday. The increment
+branch required `days_since_last == 1 AND today.weekday() != 6`, so when the
+current listen fell on a Sunday, the "listened yesterday" case failed its guard
+and control fell through to the `else` branch, which resets the streak to 1. The
+weekday check has no legitimate purpose — a streak is about *consecutive calendar
+days* and does not care which day of the week it is — so any user who listened
+Saturday then Sunday (a normal continuation) had their streak silently wiped
+every Sunday.
+
+**My fix and side-effect check.** I removed the `and today.weekday() != 6`
+clause, leaving `elif days_since_last == 1:` to increment on any consecutive day
+(`streak_service.py:73`). I checked both sides of the day boundary: all 5 streak
+tests pass — Sunday now increments (`test_streak_increments_on_sunday`), a
+genuinely skipped day still resets (`test_streak_resets_after_skipped_day`,
+Mon→Wed → 1), same-day double listens still don't double count, and new users
+still start at 1. No other code reads `weekday()`, so nothing else is affected.
+
+---
+
+*(Remaining entries below.)*
