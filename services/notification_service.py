@@ -68,6 +68,8 @@ def add_to_playlist(playlist_id: str, song_id: str, added_by_user_id: str) -> No
             notification_type="song_added_to_playlist",
             body=f"{adder.username} added your song '{song.title}' to the playlist '{playlist.name}'.",
         )
+ 
+
 
 
 def rate_song(user_id: str, song_id: str, score: int) -> Rating:
@@ -106,6 +108,12 @@ def rate_song(user_id: str, song_id: str, score: int) -> Rating:
         db.session.add(rating)
 
     db.session.commit()
+    if song.shared_by != user_id:
+        create_notification(
+            user_id=song.shared_by,
+            notification_type="song_rated",
+            body=f"{rater.username} rated your song '{song.title}' {score}/5.",
+        )
 
     return rating
 
