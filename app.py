@@ -37,6 +37,13 @@ def create_app(config=None):
     app.register_blueprint(users_bp, url_prefix="/users")
     app.register_blueprint(feed_bp, url_prefix="/feed")
 
+    @app.route("/")
+    def index():
+        return {
+            "message": "Mixtape API",
+            "endpoints": ["/songs", "/playlists", "/users", "/feed"],
+        }
+
     with app.app_context():
         db.create_all()
 
