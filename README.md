@@ -83,13 +83,13 @@ pytest tests/
 
 ## The Five Open Issues
 
-| # | Title | Affected service |
-|---|-------|-----------------|
-| 1 | My listening streak keeps resetting | `streak_service.py` |
-| 2 | Friends Listening Now shows people from yesterday | `feed_service.py` |
-| 3 | The same song keeps showing up twice in search | `search_service.py` |
-| 4 | I got notified when a friend added my song to a playlist but not when they rated it | `notification_service.py` |
-| 5 | The last song in a playlist never shows up | `playlist_service.py` |
+| #   | Title                                                                               | Affected service          |
+| --- | ----------------------------------------------------------------------------------- | ------------------------- |
+| 1   | My listening streak keeps resetting                                                 | `streak_service.py`       |
+| 2   | Friends Listening Now shows people from yesterday                                   | `feed_service.py`         |
+| 3   | The same song keeps showing up twice in search                                      | `search_service.py`       |
+| 4   | I got notified when a friend added my song to a playlist but not when they rated it | `notification_service.py` |
+| 5   | The last song in a playlist never shows up                                          | `playlist_service.py`     |
 
 Full issue descriptions are in the **Project 5 brief**. Read them carefully before opening any service file.
 
@@ -115,3 +115,28 @@ fix: correct Sunday boundary condition in streak reset logic
 ```
 
 See the project brief for full submission requirements.
+
+---
+
+## Progress
+
+**Milestone 1 — Fork, Set Up, and Orient Yourself: Complete**
+
+- Repo forked and cloned; `bugfix/mixtape` branch created
+- Environment set up, dependencies installed, database seeded
+- App confirmed running locally via `FLASK_APP=app:create_app flask run`
+- Codebase map and data flow trace written in `submission.md`
+- All five issue descriptions read
+
+**Bug plan:**
+
+| Issue                             | Status                                       |
+| --------------------------------- | -------------------------------------------- |
+| #1 — Streak resets on Sunday      | Required fix                                 |
+| #3 — Duplicate search results     | Required fix                                 |
+| #5 — Last playlist song missing   | Required fix                                 |
+| #4 — Missing rating notification  | Stretch fix                                  |
+| Regression test (streak / search) | Stretch deliverable                          |
+| #2 — Stale feed entries           | Not fixed (out of scope for this submission) |
+
+**Next up:** Milestone 2 — reproduce each chosen bug before writing any fix code.
