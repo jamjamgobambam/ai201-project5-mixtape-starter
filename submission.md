@@ -55,3 +55,17 @@ The rating logic was missing the notification creation step. The app saved the r
 
 ### Your fix and side-effect check
 I added a notification after the rating is committed. If the rater is not the original sharer, the app now creates a `song_rated` notification for the song owner. I also kept the self-notification guard so users do not receive notifications when rating their own songs. I checked that the existing rating save/update behavior still remains unchanged.
+
+## Issue #5 — The last song in a playlist never shows up
+
+### How I reproduced it
+I inspected the playlist retrieval logic for `GET /playlists/<playlist_id>/songs`. The user report said the playlist count showed one more song than the endpoint returned, and the missing song was always the newest one. This matched the behavior of code that removes the final item from a list.
+
+### How I found the root cause
+I traced the playlist songs endpoint to `get_playlist_songs()` in `services/playlist_service.py`. The function queried songs in playlist order using `playlist_entries.c.position`, then returned `songs[:-1]`.
+
+### The root cause
+The code used Python slicing `songs[:-1]`, which means “all items except the last one.” Because songs are ordered by playlist position, the last item is the most recently added song. This caused the endpoint to always hide the newest song.
+
+### Your fix and side-effect check
+I changed the return statement from `songs[:-1]` to `songs`, so the function returns every song in the playlist. I checked that the ordering logic still stays the same because the query still orders by `playlist_entries.c.position`.
