@@ -147,4 +147,26 @@ See the project brief for full submission requirements.
 | Regression test (streak or feed) | Stretch deliverable                                              |
 | #3 — Duplicate search results    | Investigated, does not reproduce in this environment — not fixed |
 
-**Next up:** Milestone 3 — investigate root cause, fix, and document each bug one at a time.
+**Milestone 3 — Investigate, Fix, and Document Each Bug: Complete**
+
+- Issue #1 (streak) fixed: removed the `today.weekday() != 6` condition that wrongly excluded Sundays from incrementing the streak
+- Issue #2 (stale feed) fixed: replaced the rolling 24-hour `RECENT_THRESHOLD` cutoff with a calendar-day (midnight UTC) cutoff
+- Issue #5 (playlist truncation) fixed: removed the `[:-1]` slice that unconditionally dropped the last song from playlist results
+- Issue #4 (missing rating notification, stretch) fixed: added a `create_notification()` call to `rate_song`, mirroring the existing pattern in `add_to_playlist`
+- Issue #3 (search duplicates) remains investigated but unfixed — confirmed the missing `.distinct()` is a real code smell, but it does not produce user-visible duplicates in this environment
+- All four fixes verified against relevant test suites (`test_streaks.py`, `test_playlists.py`) or live HTTP checks where no test file existed (feed, notifications), each committed as its own `fix:` commit
+- Complete 5-field root cause analysis entries written for all four fixed bugs, plus a documented investigation note for Issue #3, in `submission.md`
+- Regression test stretch goal satisfied by the pre-existing `test_streak_increments_on_sunday`, which now passes after the Issue #1 fix
+
+**Updated bug plan:**
+
+| Issue                            | Status                                                           |
+| -------------------------------- | ---------------------------------------------------------------- |
+| #1 — Streak resets on Sunday     | Fixed                                                            |
+| #2 — Stale feed entries          | Fixed                                                            |
+| #5 — Last playlist song missing  | Fixed                                                            |
+| #4 — Missing rating notification | Fixed (stretch)                                                  |
+| Regression test                  | Satisfied via existing `test_streak_increments_on_sunday`        |
+| #3 — Duplicate search results    | Investigated, not fixed (does not reproduce in this environment) |
+
+**Next up:** Milestone 4 — final review, commit history check, and AI usage write-up.
