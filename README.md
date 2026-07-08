@@ -82,7 +82,8 @@ pytest tests/
 
 ## </details>
 
-## The Five Open Issues
+<details>
+<summary></strong>The Five Open Issues</strong></summary>
 
 | #   | Title                                                                               | Affected service          |
 | --- | ----------------------------------------------------------------------------------- | ------------------------- |
@@ -93,6 +94,8 @@ pytest tests/
 | 5   | The last song in a playlist never shows up                                          | `playlist_service.py`     |
 
 Full issue descriptions are in the **Project 5 brief**. Read them carefully before opening any service file.
+
+</details>
 
 ---
 
@@ -191,6 +194,10 @@ See the project brief for full submission requirements.
 - Reviewed all root cause analysis entries in `submission.md` for completeness against the 5 required fields (issue/title, how reproduced, how found root cause, the root cause, fix + side-effect check)
 - Wrote the AI Usage section, describing how AI was used for codebase orientation, reproduction strategy design, root cause comparison against working precedent, and verification/correction during Issue #2's and Issue #3's investigations
 </details>
+
+# screenshot of bug fix commits
+
+![screenshot of bug fix](screenshot.png)
 
 **Final status: submission complete.**
 
