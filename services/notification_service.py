@@ -113,6 +113,7 @@ def rate_song(user_id: str, song_id: str, score: int) -> Rating:
             notification_type="song_rated",
             body=f"{rater.username} rated your song '{song.title}' {score}/5.",
         )
+
     return rating
 
 
