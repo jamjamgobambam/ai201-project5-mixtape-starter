@@ -42,3 +42,16 @@ The search query used an outer join to song_tags. Since one song can have multip
 I removed the unnecessary outer join from the search query and kept the filter on Song.title and Song.artist. The song tags are still included through song.to_dict(), so the response still contains tags. I retested searches for Anthem and Borough to confirm the matching song still appears once.
 
 
+## Issue #4 — I got notified when a friend added my song to a playlist but not when they rated it
+
+### How I reproduced it
+I inspected the notification behavior described in the issue. Playlist notifications worked when a friend added a shared song to a playlist, but rating a shared song only saved the rating and did not create a notification. I traced this through `services/notification_service.py`.
+
+### How I found the root cause
+I compared the working playlist notification path with the rating path in `services/notification_service.py`. The `add_to_playlist()` function called `create_notification()` after adding the song to a playlist. The `rate_song()` function saved or updated the rating, committed it, and returned the rating without calling `create_notification()`.
+
+### The root cause
+The rating logic was missing the notification creation step. The app saved the rating correctly, but there was no code that created a `song_rated` notification for the original sharer of the song. This is why the rating appeared on the song, but the owner never saw a notification.
+
+### Your fix and side-effect check
+I added a notification after the rating is committed. If the rater is not the original sharer, the app now creates a `song_rated` notification for the song owner. I also kept the self-notification guard so users do not receive notifications when rating their own songs. I checked that the existing rating save/update behavior still remains unchanged.
