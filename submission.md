@@ -69,3 +69,22 @@ The code used Python slicing `songs[:-1]`, which means “all items except the l
 
 ### Your fix and side-effect check
 I changed the return statement from `songs[:-1]` to `songs`, so the function returns every song in the playlist. I checked that the ordering logic still stays the same because the query still orders by `playlist_entries.c.position`.
+
+
+# Mixtape Bug Hunt Submission
+
+## AI Usage
+
+## Codebase Map
+
+## Issue #1 — My listening streak keeps resetting
+
+## Issue #2 — Friends Listening Now shows people from yesterday
+
+## Issue #3 — The same song keeps showing up twice in search
+
+## Issue #4 — I got notified when a friend added my song to a playlist but not when they rated it
+
+## Issue #5 — The last song in a playlist never shows up
+
+## Git Log Screenshot
