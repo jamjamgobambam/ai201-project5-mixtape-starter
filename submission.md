@@ -126,13 +126,14 @@ A pattern i noticed is how every step validates if a song or user is present in 
 
 - Issue #2 - Friends Listening Now Shows People from yesterday
 
+    # reproduce bug
     python -m flask --app "app:create_app" run --port 5055 --no-debugger --no-reload
 
     discover a user id (darius shares "Block Party")
-curl -s "http://localhost:5055/songs/search?q=Block%20Party"
+    curl -s "http://localhost:5055/songs/search?q=Block%20Party"
 
     read his "listening now" feed
-curl -s "http://localhost:5055/feed/<darius_id>/listening-now"
+    curl -s "http://localhost:5055/feed/<darius_id>/listening-now"
 
     Result = 
     count = 2
@@ -142,14 +143,55 @@ curl -s "http://localhost:5055/feed/<darius_id>/listening-now"
     Add a "ghost" who listened to music 23 hour ago. The seed data only had 2 hours as maximum amount in the past, A script was used to create the new user
 
     GET /feed/<nova>/listening-now
-count = 4
-  darius   Midnight Drive     0.19h ago
-  simone   Still Waters       0.27h ago
-  kenji    First Light        0.35h ago
-  ghost    Golden Hour       23.00h ago   <-- YESTERDAY
+    count = 4
+    darius   Midnight Drive     0.19h ago
+    simone   Still Waters       0.27h ago
+    kenji    First Light        0.35h ago
+    ghost    Golden Hour       23.00h ago   <-- YESTERDAY
 
 
-    The user_id's who have music in "Listening now" shows the bug, that music listened to in the past 24 hours count as "Currently Listening", the code has a comment for 30 minutes to count as currently listening
+    # How I found the route clause
+    
+    Using the seed_data.py only made users have a maximum of 2 hours in the "listening now" feed. Already thats way more than "now" so claude made a test to see the Edge case for what no longer counts as "listening now". 23 Hours still counted, 
+    Looking at feed.py and then feed_service.py showed an issue with the recent threshold of the feed_service.py file
+    
+    
+    # The Root Cause
+    The user_id's who have music in "Listening now" shows the bug, that music listened to in the past 24 hours count as "Currently Listening". RECENT_THRESHOLD was set to timedelta(hours=24), which is far too long a window to represent someone "currently" listening
+    # Fix and side effect check
+
+        RECENT_THRESHOLD = timedelta(hours=24)
+        
+        ->
+
+        RECENT_THRESHOLD = timedelta(hours=0.05)
+
+
+    Side effect check - Changing the recent_threshold to fix the listening-now bug might produce unwanted side effects because the fix changed the recent threshold for the whole file. I will test 
+    get_activity_feed since its the only other function in the file
+
+    Side effect check - get_activity_feed after changing RECENT_THRESHOLD
+
+    get_activity_feed is documented as not filtered by recency, so changing
+    RECENT_THRESHOLD (used only in get_friends_listening_now) shouldn't
+    affect it at all. Verified by seeding one event 3 days old and one
+    1 minute old, then confirming get_activity_feed still returns both,
+    newest-first, and that `limit` is respected:
+
+    RECENT_THRESHOLD is currently: 0:03:00
+    activity feed returned: ['New Song', 'Old Song']
+    PASS: get_activity_feed still returns old + new events, newest-first, respects limit
+        -> unaffected by the RECENT_THRESHOLD change (as expected, it never reads that constant)
+
+
+    get_activity_feed behavior is not affected by the change and currently_listening is alot more accurate on time
+
+    tests/test_feed.py::test_friend_within_threshold_counts_as_listening_now PASSED
+
+    tests/test_feed.py::test_friend_outside_threshold_is_excluded PASSED
+
+    These tests were to check that a friend listening to a song 1 minute ago does show up in "currently listening" opposed to the second test of someone with 23 hours
+
 
 
 - Issue #4 - I get notified when a friend added my song to a playlist but not when they rated it
@@ -201,8 +243,43 @@ curl -s "http://localhost:5055/users/<nova>/notifications"
 
     return [song.to_dict() for song in songs]
 
-    
+
 
     Side effect check - I checked to see if returning a playlist with one song will accurately return the song or an empty list, the function still returned the appropiate amount of songs
 
-    pytest tests/test_playlists.py::test_single_song_playlist_returns_the_song -v
+    """Manual side-effect check: playlist with exactly 1 song."""
+    from app import create_app, db
+    from models import User, Song, Playlist, playlist_entries
+    from services.playlist_service import get_playlist_songs
+
+    app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"})
+    with app.app_context():
+        db.create_all()
+
+        user = User(username="soloDj", email="solo@example.com")
+        db.session.add(user)
+        db.session.flush()
+
+        song = Song(title="Only Track", artist="Solo Artist", shared_by=user.id)
+        db.session.add(song)
+        db.session.flush()
+
+        playlist = Playlist(name="One Song Playlist", created_by=user.id)
+        db.session.add(playlist)
+        db.session.flush()
+
+        db.session.execute(
+            playlist_entries.insert().values(
+                playlist_id=playlist.id,
+                song_id=song.id,
+                position=1,
+                added_by=user.id,
+            )
+        )
+        db.session.commit()
+
+        songs = get_playlist_songs(playlist.id)
+        print(f"songs returned: {len(songs)}")
+        assert len(songs) == 1, "1-song playlist should return 1 song, not 0"
+        print("PASS: single-song playlist returns the song")
+
