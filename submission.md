@@ -1,3 +1,8 @@
+
+## AI Usage Section
+
+My AI tool for this project was Claude, which helped with a lot of aspects of this project. The main uses for Claude were tracing the data flow through the whole project - it helped me mentally map how routes and services connected and what functions lived in each file - and explaining how the models/database were used to pull the stored info for each part of the app. Another very useful aspect was verifying my fixes by generating scripts that tested scenarios seed_data.py didn't cover. Overall, Claude did not point me in the wrong direction, but it did sometimes go further than I asked - for example, surfacing an unrelated bug while doing a side-effect check, or writing test scripts in a separate scratch folder instead of the project's tests folder - and I had to redirect it back to the specific task. I also caught an inaccuracy from an earlier session: when Claude first found the RECENT_THRESHOLD = timedelta(hours=24) bug, it mentioned seeing a comment in the file saying the threshold was supposed to be 30 minutes, which I noted down in my own write-up. When I asked about that same comment later, Claude searched feed_service.py directly and found no such comment exists anywhere in the file's history - the earlier claim wasn't accurate, and I had to go back and correct the wording in my submission.
+
 ## Codebase map
 
 
