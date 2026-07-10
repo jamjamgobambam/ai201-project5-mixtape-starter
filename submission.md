@@ -122,7 +122,7 @@ A pattern i noticed is how every step validates if a song or user is present in 
 
 
 
-## Bug Reporduction
+## Bug Reproduction
 
 - Issue #2 - Friends Listening Now Shows People from yesterday
 
@@ -150,10 +150,10 @@ A pattern i noticed is how every step validates if a song or user is present in 
     ghost    Golden Hour       23.00h ago   <-- YESTERDAY
 
 
-    # How I found the route clause
+    # How I found the route cause
     
     Using the seed_data.py only made users have a maximum of 2 hours in the "listening now" feed. Already thats way more than "now" so claude made a test to see the Edge case for what no longer counts as "listening now". 23 Hours still counted, 
-    Looking at feed.py and then feed_service.py showed an issue with the recent threshold of the feed_service.py file
+    Looking at feed.py and then feed_service.py showed an issue with the recent threshold of the feed_service.py file, the recent threshold was set too 24 hours for the whole file.
     
     
     # The Root Cause
@@ -166,15 +166,14 @@ A pattern i noticed is how every step validates if a song or user is present in 
 
         RECENT_THRESHOLD = timedelta(hours=0.05)
 
-
-    Side effect check - Changing the recent_threshold to fix the listening-now bug might produce unwanted side effects because the fix changed the recent threshold for the whole file. I will test 
-    get_activity_feed since its the only other function in the file
+    Narrowing the window to 3 minutes means the cutoff filter (listened_at >= cutoff)
+    only matches events from the last few minutes, so a 23-hour-old event like the
+    ghost's no longer passes the filter and is correctly excluded.
 
     Side effect check - get_activity_feed after changing RECENT_THRESHOLD
 
-    get_activity_feed is documented as not filtered by recency, so changing
-    RECENT_THRESHOLD (used only in get_friends_listening_now) shouldn't
-    affect it at all. Verified by seeding one event 3 days old and one
+    RECENT_THRESHOLD is used by the whole file, but get_activity_feed is documented as
+    not filtered by recency, so it shouldn't be affected at all. Verified by seeding one event 3 days old and one
     1 minute old, then confirming get_activity_feed still returns both,
     newest-first, and that `limit` is respected:
 
@@ -196,24 +195,76 @@ A pattern i noticed is how every step validates if a song or user is present in 
 
 - Issue #4 - I get notified when a friend added my song to a playlist but not when they rated it
 
+    # reproduce bug
     darius rates nova's song "Midnight Drive" 5 stars
 
     BEFORE: nova's notifications
-curl -s "http://localhost:5055/users/<nova>/notifications"
-  count = 1
-    - song_added_to_playlist | darius added your song 'Midnight Drive' to the playlist 'Late Night Vibes'
+    curl -s "http://localhost:5055/users/<nova>/notifications"
+    count = 1
+        - song_added_to_playlist | darius added your song 'Midnight Drive' to the playlist 'Late Night Vibes'
 
-    POST the rating
-curl -s -X POST "http://localhost:5055/songs/<song>/rate" \
-  -H "Content-Type: application/json" -d '{"user_id":"<darius>","score":5}'
-  -> HTTP 201    (rating saved successfully)
+        POST the rating
+    curl -s -X POST "http://localhost:5055/songs/<song>/rate" \
+    -H "Content-Type: application/json" -d '{"user_id":"<darius>","score":5}'
+    -> HTTP 201    (rating saved successfully)
 
-    AFTER: nova's notifications — unchanged
-curl -s "http://localhost:5055/users/<nova>/notifications"
-  count = 1
-    - song_added_to_playlist | darius added your song 'Midnight Drive' to the playlist 'Late Night Vibes'
+        AFTER: nova's notifications — unchanged
+    curl -s "http://localhost:5055/users/<nova>/notifications"
+    count = 1
+        - song_added_to_playlist | darius added your song 'Midnight Drive' to the playlist 'Late Night Vibes'
 
-    When a user adds a song that was shared by someone else, the function to send the notification gets called. But when a user rates the song, the same function isnt called to send the notification to the original sharer
+
+    # How I found the route clause
+
+    from songs.py the rate route goes too notification services where two similar functions catches your attention rate_song and add_to_playlist. These are similar because after they complete their goal of either rating a song or adding a song to a playlist, they are both supposed to notify the sharer of the song. Only add_to_playlist completes this action with lines 65-69 which rate_song does not have any similar code in the function
+
+
+    # The Root Cause
+    When a user adds a song that was shared by someone else, the function to send the notification gets called in the end of add_to_playlist. But when a user rates a song, the method create_notification isnt called in the rate_song function to send the notification to the original sharer. Futhermore the rate_song function has no mention of the added_by_user_id to recognize the orignal sharer thats present in the add_to_playlist function
+
+    # Fix and side effect check
+
+     N/A
+
+     ->    
+
+    if song.shared_by != user_id:
+        create_notification(
+            user_id=song.shared_by,
+            notification_type="song_rated",
+            body=f"{rater.username} rated your song '{song.title}' {score} stars.",
+    )
+    
+    Side effect check - add_to_playlist in notification_service.py
+
+    I checked add_to_playlist since its in the same file as rate_song and in real world
+    use they would often go in sequence of each other (add a song, then rate it). Since
+    rate_song now calls create_notification (the same helper add_to_playlist uses), I
+    checked that add_to_playlist's own notification behavior wasn't affected by the change.
+
+    Note: while writing this check I found a separate, pre-existing bug in
+    add_to_playlist unrelated to Issue #4 - playlist.songs.append(song) never
+    sets the NOT NULL position/added_by columns on playlist_entries, so the real
+    POST /playlists/<id>/songs route would 500 for anyone. seed_data.py never
+    actually calls add_to_playlist (it inserts playlist_entries directly), which
+    is why this was never caught. Left this for a separate fix/issue - to check
+    JUST the notification logic here, I pre-inserted the playlist entries
+    directly (same technique seed_data.py uses) so add_to_playlist's
+    `if song not in playlist.songs` check is True and it skips the buggy append.
+
+    Verified:
+    1. add_to_playlist still notifies the original sharer when a friend adds
+    their song.
+    2. Adding your own song still does not self-notify.
+    3. add_to_playlist and rate_song notifications coexist independently for
+    the same song/sharer - one doesn't overwrite or interfere with the other.
+
+    PASS: add_to_playlist still notifies the sharer -> darius added your song 'Midnight Drive' to the playlist 'Late Night Vibes'.
+    PASS: adding your own song does not self-notify
+    PASS: add_to_playlist and rate_song notifications coexist independently -> ['song_rated', 'song_added_to_playlist']
+
+    Both functions are working as intended and send notifications to the user when the action is fufilled. Fixing rate_song did not affect add_to_playlist
+
 
 
 - Issue #5 - The last song in a playlist never shows up
@@ -224,12 +275,18 @@ curl -s "http://localhost:5055/users/<nova>/notifications"
 
     FAILED tests/test_playlists.py::test_playlist_returns_all_songs - AssertionError: assert 4 == 5
 
-    Playlist has 5 songs saved to it, running a Pytest returned that the same playlist contained 5 items but only returned 4, easiest to test because of pytest, So all the songs are in the list, returning the songs causes the last missing song
+    Playlist has 5 songs saved to it. Running pytest showed the playlist contained 5 songs
+    in the database but get_playlist_songs only returned 4 - the songs were saving
+    correctly, so the bug had to be in how they were being returned.
 
 
-    # How I found the route clause
+    # How I found the root cause
 
-    Using a pytest function made it apparent that all songs were saving correctly to the playlist in playlist_service.py but wasnt correctly returning. Any song with more than 1 song in a playlist is the data condition to find this bug
+    Opened playlist_service.py and checked the query in get_playlist_songs - the join and
+    order_by(asc(position)) looked correct, so I ruled out the DB layer. The confidence
+    moment was noticing the return line explicitly slices the list with songs[:-1] before
+    converting to dicts, which explains why the result was always exactly one song short.
+    Any playlist with more than 1 song shows this bug.
 
 
     # The Root Cause
@@ -247,6 +304,7 @@ curl -s "http://localhost:5055/users/<nova>/notifications"
 
     Side effect check - I checked to see if returning a playlist with one song will accurately return the song or an empty list, the function still returned the appropiate amount of songs
 
+    ```python
     """Manual side-effect check: playlist with exactly 1 song."""
     from app import create_app, db
     from models import User, Song, Playlist, playlist_entries
@@ -282,4 +340,5 @@ curl -s "http://localhost:5055/users/<nova>/notifications"
         print(f"songs returned: {len(songs)}")
         assert len(songs) == 1, "1-song playlist should return 1 song, not 0"
         print("PASS: single-song playlist returns the song")
+    ```
 
